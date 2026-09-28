@@ -1065,13 +1065,20 @@ const app = {
   },
 
   async llamarATriaje(pacienteId) {
+    // Solo lanza la señal de TV (actualiza contador llamados) sin cambiar el estado
     if (!Estado.online || !sb) return;
     try {
+      const { data } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', pacienteId).single();
+      if (!data) return;
+      let sv = {};
+      try { sv = JSON.parse(data.signos_vitales || '{}'); } catch (e) { }
+      sv.llamados = (sv.llamados || 0) + 1;
+
       const { error } = await sb.from('pacientes_espera')
-        .update({ estado: 'en_triaje' })
+        .update({ signos_vitales: JSON.stringify(sv) })
         .eq('id', pacienteId);
       if (error) throw error;
-      this.toast('📢 Llamando a paciente a Triaje...', 'success');
+      this.toast('📢 Llamando en TV...', 'success');
       await this.cargarPacientesTriaje();
     } catch (e) {
       this.toast('Error al llamar', 'error');
@@ -2850,7 +2857,9 @@ const app = {
         if (p.estado === 'en_triaje') {
           // Están actualmente en Signos Vitales
           signosVitalesActivos.push({
-            turno: p.numero_turno_area || '—',
+            turno: p.numero_turno_area
+              ? `${(p.especialidad || '').substring(0, 3).toUpperCase()}-${p.numero_turno_area}`
+              : '—',
             nombre: p.nombre || 'Desconocido',
             especialidad: p.especialidad
           });
@@ -2858,7 +2867,9 @@ const app = {
 
         // El último en consulta o atendido es el que están atendiendo actualmente
         if ((p.estado === 'en_consulta' || p.estado === 'atendido') && !areas[p.especialidad].atendiendo) {
-          areas[p.especialidad].atendiendo = p.numero_turno_area || 'S/N';
+          areas[p.especialidad].atendiendo = p.numero_turno_area
+            ? `${(p.especialidad || '').substring(0, 3).toUpperCase()}-${p.numero_turno_area}`
+            : 'S/N';
           areas[p.especialidad].doctor = p.atendido_por || 'N/A';
           areas[p.especialidad].paciente = p.nombre || 'Desconocido';
         }
