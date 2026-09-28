@@ -275,8 +275,9 @@ const app = {
 
         // Mostrar datos en pantalla inmediatamente si ya hay pacientes en consulta
         if (data.length > 0) {
+          const paciente = data[0];
           const esTriaje = paciente.estado === 'en_triaje';
-          const areaMostrar = esTriaje ? 'TRIAJE / ENFERMERÍA' : paciente.especialidad;
+          const areaMostrar = esTriaje ? 'SIGNOS VITALES' : paciente.especialidad;
           const turnoTxt = (paciente.numero_turno_area && !esTriaje)
             ? paciente.especialidad.substring(0, 3).toUpperCase() + '-' + paciente.numero_turno_area
             : (esTriaje ? 'Tomar Signos' : 'Nuevo Paciente');
@@ -299,7 +300,7 @@ const app = {
               historyContainer.innerHTML += `
                 <div style="border: 2px solid #2563eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 0.5rem;">
                   <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${p.estado === 'en_triaje' ? 'TRIAJE' : p.especialidad}</div>
-                  <div style="background: #2563eb; color: white; font-weight: 800; font-size: 1.6rem; text-align: center; padding: 0.3rem;">${p.estado === 'en_triaje' ? 'SIGNOS' : tTxt}</div>
+                  <div style="background: #2563eb; color: white; font-weight: 800; font-size: ${p.estado === 'en_triaje' ? '1.2rem' : '1.6rem'}; text-align: center; padding: 0.3rem;">${p.estado === 'en_triaje' ? 'SIGNOS VITALES' : tTxt}</div>
                   <div style="background: white; color: #334155; font-weight: 700; font-size: 1rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.nombre}</div>
                 </div>
               `;
@@ -339,7 +340,7 @@ const app = {
 
   anunciarTurnoTV(paciente) {
     const esTriaje = paciente.estado === 'en_triaje';
-    const areaMostrar = esTriaje ? 'TRIAJE / ENFERMERÍA' : paciente.especialidad;
+    const areaMostrar = esTriaje ? 'SIGNOS VITALES' : paciente.especialidad;
     const turnoTxt = (paciente.numero_turno_area && !esTriaje)
       ? paciente.especialidad.substring(0, 3).toUpperCase() + '-' + paciente.numero_turno_area
       : (esTriaje ? 'Tomar Signos' : 'Nuevo Paciente');
@@ -359,7 +360,7 @@ const app = {
       historyItem.style.cssText = "border: 2px solid #2563eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 0.5rem; flex-shrink: 0;";
       historyItem.innerHTML = `
         <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${esTriaje ? 'TRIAJE' : paciente.especialidad}</div>
-        <div style="background: #2563eb; color: white; font-weight: 800; font-size: 1.6rem; text-align: center; padding: 0.3rem;">${esTriaje ? 'SIGNOS' : turnoTxt}</div>
+        <div style="background: #2563eb; color: white; font-weight: 800; font-size: ${esTriaje ? '1.2rem' : '1.6rem'}; text-align: center; padding: 0.3rem;">${esTriaje ? 'SIGNOS VITALES' : turnoTxt}</div>
         <div style="background: white; color: #334155; font-weight: 700; font-size: 1rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${paciente.nombre}</div>
       `;
 
@@ -400,7 +401,7 @@ const app = {
         if (!synth) return;
 
         const textoVoz = esTriaje
-          ? `Atención. ${paciente.nombre}. Pasar a Triaje y Enfermería.`
+          ? `Atención. ${paciente.nombre}. Pasar a Signos Vitales.`
           : `Turno ${turnoTxt}. ${paciente.nombre}. Pasar a ${paciente.especialidad}.`;
 
         const hablar = () => {
