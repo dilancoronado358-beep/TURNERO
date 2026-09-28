@@ -1099,13 +1099,21 @@ const app = {
     }
   },
 
-  abrirFormularioTriaje(pacienteId, nombrePaciente) {
+  async abrirFormularioTriaje(pacienteId, nombrePaciente) {
     document.getElementById('triajeTurnoId').value = pacienteId;
     document.getElementById('triajePacienteName').innerText = 'Paciente: ' + nombrePaciente;
     ['triajeEdad', 'triajePeso', 'triajeEstatura', 'triajePresion',
       'triajeTemperatura', 'triajeFrecuencia', 'triajeSaturacion'
     ].forEach(id => { document.getElementById(id).value = ''; });
     this.mostrarVista('formTriaje');
+
+    // Marcar inmediatamente como en_triaje para que aparezca en "Estado de Turnos"
+    if (Estado.online && sb) {
+      await sb.from('pacientes_espera')
+        .update({ estado: 'en_triaje' })
+        .eq('id', pacienteId)
+        .neq('estado', 'en_triaje'); // Solo si no está ya en triaje
+    }
   },
 
   async guardarTriaje() {
@@ -2821,45 +2829,66 @@ const app = {
         
       if (error) throw error;
       
-      const areas = {
-        'Signos Vitales': { atendiendo: null, doctor: 'Enfermería', enEspera: 0, total: 0, paciente: null }
-      };
-      
+      const areas = {};
+      const signosVitalesActivos = []; // pacientes actualmente en_triaje
+      let signosEnEspera = 0;
+
       data.forEach(p => {
         if (!p.especialidad) return;
-        
+
         if (!areas[p.especialidad]) {
           areas[p.especialidad] = { atendiendo: null, enEspera: 0, total: 0, paciente: null };
         }
-        
+
         areas[p.especialidad].total++;
+
         if (p.estado === 'en_espera' || p.estado === 'pendiente') {
           areas[p.especialidad].enEspera++;
-          // Todos los que están en espera globalmente, también están en espera para signos vitales
-          areas['Signos Vitales'].enEspera++;
+          signosEnEspera++; // estos aún no han pasado por signos
         }
-        
-        // El último que entró a consulta o fue atendido es el que están atendiendo o acaban de atender
+
+        if (p.estado === 'en_triaje') {
+          // Están actualmente en Signos Vitales
+          signosVitalesActivos.push({
+            turno: p.numero_turno_area || '—',
+            nombre: p.nombre || 'Desconocido',
+            especialidad: p.especialidad
+          });
+        }
+
+        // El último en consulta o atendido es el que están atendiendo actualmente
         if ((p.estado === 'en_consulta' || p.estado === 'atendido') && !areas[p.especialidad].atendiendo) {
           areas[p.especialidad].atendiendo = p.numero_turno_area || 'S/N';
           areas[p.especialidad].doctor = p.atendido_por || 'N/A';
           areas[p.especialidad].paciente = p.nombre || 'Desconocido';
         }
-        
-        // Para Signos Vitales
-        if (p.estado === 'en_triaje' && !areas['Signos Vitales'].atendiendo) {
-          // El número de turno para signos vitales no es el de área, pero mostraremos "Llamado"
-          areas['Signos Vitales'].atendiendo = 'Llamado';
-          areas['Signos Vitales'].paciente = p.nombre || 'Desconocido';
-        }
       });
-      
-      // Si no hay nadie en triaje pero hay total > 0, ocultarlo o dejarlo en --
-      if (areas['Signos Vitales'].enEspera === 0 && !areas['Signos Vitales'].atendiendo) {
-        delete areas['Signos Vitales'];
-      }
-      
+
       let html = '';
+
+      // ── Tarjeta SIGNOS VITALES siempre visible si hay datos ──────────
+      if (Object.keys(areas).length > 0) {
+        const listaPacientes = signosVitalesActivos.length > 0
+          ? signosVitalesActivos.map(sv => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding: 0.4rem 0; border-bottom: 1px solid var(--border);">
+                <span style="font-weight:700; color: var(--success); font-size: 1rem; min-width:40px;">#${sv.turno}</span>
+                <span style="font-weight:600; color: var(--text-dark); font-size:0.9rem; flex:1; margin:0 0.5rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sv.nombre}</span>
+                <span style="font-size:0.75rem; color: var(--text-muted); white-space:nowrap;">${sv.especialidad}</span>
+              </div>`).join('')
+          : `<div style="color:var(--text-muted); font-size:0.9rem; text-align:center; padding: 0.5rem 0;">Sin pacientes en este momento</div>`;
+
+        html += `
+          <div style="background: var(--surface-solid); border-radius: var(--radius-md); padding: 1.5rem; border: 2px solid rgba(14,165,233,0.4); box-shadow: 0 4px 15px rgba(14,165,233,0.1); grid-column: 1 / -1;">
+            <h3 style="margin-top:0; color:#0ea5e9; font-size:1.2rem; margin-bottom:0.3rem;">🩺 Signos Vitales — Enfermería</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin:0 0 1rem;">Pacientes que están siendo atendidos en este momento</p>
+            <div style="min-height: 2rem;">${listaPacientes}</div>
+            <div style="margin-top:1rem; font-size:0.9rem;">
+              👥 Pacientes aún en sala de espera: <strong style="color:#f59e0b;">${signosEnEspera}</strong>
+            </div>
+          </div>
+        `;
+      }
+
       if (Object.keys(areas).length === 0) {
         html = '<div style="color:var(--text-muted); text-align:center; width:100%;">No hay registros de turnos en esta brigada.</div>';
       } else {
@@ -2883,6 +2912,7 @@ const app = {
           `;
         });
       }
+
       grid.innerHTML = html;
     } catch (e) {
       grid.innerHTML = `<div style="color:red; text-align:center; width:100%;">Error: ${e.message}</div>`;
