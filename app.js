@@ -2815,28 +2815,49 @@ const app = {
 
     try {
       const { data, error } = await sb.from('pacientes_espera')
-        .select('especialidad, estado, numero_turno_area, atendido_por')
+        .select('nombre, especialidad, estado, numero_turno_area, atendido_por')
         .gte('created_at', Estado.brigadaDesde)
         .order('numero_turno_area', { ascending: false });
         
       if (error) throw error;
       
-      const areas = {};
+      const areas = {
+        'Signos Vitales': { atendiendo: null, doctor: 'Enfermería', enEspera: 0, total: 0, paciente: null }
+      };
+      
       data.forEach(p => {
         if (!p.especialidad) return;
+        
         if (!areas[p.especialidad]) {
-          areas[p.especialidad] = { atendiendo: null, enEspera: 0, total: 0 };
+          areas[p.especialidad] = { atendiendo: null, enEspera: 0, total: 0, paciente: null };
         }
+        
         areas[p.especialidad].total++;
         if (p.estado === 'en_espera' || p.estado === 'pendiente') {
           areas[p.especialidad].enEspera++;
+          // Todos los que están en espera globalmente, también están en espera para signos vitales
+          areas['Signos Vitales'].enEspera++;
         }
-        // El último que entró a consulta es el que están atendiendo
-        if (p.estado === 'en_consulta' && !areas[p.especialidad].atendiendo) {
+        
+        // El último que entró a consulta o fue atendido es el que están atendiendo o acaban de atender
+        if ((p.estado === 'en_consulta' || p.estado === 'atendido') && !areas[p.especialidad].atendiendo) {
           areas[p.especialidad].atendiendo = p.numero_turno_area || 'S/N';
           areas[p.especialidad].doctor = p.atendido_por || 'N/A';
+          areas[p.especialidad].paciente = p.nombre || 'Desconocido';
+        }
+        
+        // Para Signos Vitales
+        if (p.estado === 'en_triaje' && !areas['Signos Vitales'].atendiendo) {
+          // El número de turno para signos vitales no es el de área, pero mostraremos "Llamado"
+          areas['Signos Vitales'].atendiendo = 'Llamado';
+          areas['Signos Vitales'].paciente = p.nombre || 'Desconocido';
         }
       });
+      
+      // Si no hay nadie en triaje pero hay total > 0, ocultarlo o dejarlo en --
+      if (areas['Signos Vitales'].enEspera === 0 && !areas['Signos Vitales'].atendiendo) {
+        delete areas['Signos Vitales'];
+      }
       
       let html = '';
       if (Object.keys(areas).length === 0) {
@@ -2845,11 +2866,12 @@ const app = {
         Object.keys(areas).sort().forEach(esp => {
           const a = areas[esp];
           html += `
-            <div style="background: var(--surface-solid); border-radius: var(--radius-md); padding: 1.5rem; border: 1px solid var(--border); box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+            <div style="background: var(--surface-solid); border-radius: var(--radius-md); padding: 1.5rem; border: 1px solid var(--border); box-shadow: 0 4px 6px rgba(0,0,0,0.02); display: flex; flex-direction: column;">
               <h3 style="margin-top:0; color: var(--primary); font-size: 1.2rem; margin-bottom: 1rem; border-bottom: 2px solid rgba(14,165,233,0.1); padding-bottom: 0.5rem;">${esp}</h3>
-              <div style="margin-bottom: 0.8rem;">
+              <div style="margin-bottom: 0.8rem; flex-grow: 1;">
                 <span style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Atendiendo Turno:</span><br>
                 <strong style="font-size: 1.8rem; color: ${a.atendiendo ? 'var(--success)' : 'var(--text-muted)'};">${a.atendiendo ? a.atendiendo : '--'}</strong>
+                ${a.paciente ? `<div style="font-size: 0.95rem; font-weight: bold; color: var(--text-dark); margin-top: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">👤 ${a.paciente}</div>` : ''}
               </div>
               <div style="font-size: 0.9rem; margin-bottom: 0.3rem;">
                 👨‍⚕️ Dr/a: <strong style="color: var(--text-dark);">${a.doctor || 'N/A'}</strong>
