@@ -282,9 +282,9 @@ const app = {
           const mainContent = document.getElementById('tvContent');
           if (mainContent) {
             mainContent.innerHTML = `
-              <div style="font-size: clamp(4rem, 12vh, 7rem); color: #38bdf8; font-weight: 900; line-height: 1.1; margin-bottom: 0.5rem; text-shadow: 0 0 40px rgba(56,189,248,0.4);">${turnoTxt}</div>
-              <div style="font-size: clamp(2.5rem, 8vh, 4.5rem); color: white; font-weight: 700; margin-bottom: 1.2rem; max-width: 90vw; word-break: break-word; line-height: 1.2; text-align: center;">${paciente.nombre}</div>
-              <div style="font-size: clamp(1.5rem, 4vh, 2.5rem); color: #cbd5e1; background: rgba(255,255,255,0.1); padding: 0.8rem 2.5rem; border-radius: 20px; border: 2px solid rgba(255,255,255,0.2);">Pasar a <strong style="color: #34d399;">${paciente.especialidad}</strong></div>
+               <div style="background: white; color: #dc2626; font-weight: 900; font-size: 2.5rem; padding: 0.5rem; text-transform: uppercase;">${paciente.especialidad}</div>
+               <div style="background: #dc2626; color: white; font-weight: 900; font-size: 4rem; padding: 0.5rem;">${turnoTxt}</div>
+               <div style="background: white; color: #1e293b; font-weight: 800; font-size: 1.8rem; padding: 0.5rem; border-top: 2px solid #dc2626;">${paciente.nombre}</div>
             `;
           }
 
@@ -294,9 +294,13 @@ const app = {
             for (let i = 1; i < Math.min(data.length, 6); i++) {
               const p = data[i];
               const tTxt = p.numero_turno_area ? p.especialidad.substring(0, 3).toUpperCase() + '-' + p.numero_turno_area : 'Turno';
-              historyContainer.innerHTML += `<div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 12px; min-width: 200px; border-left: 4px solid #38bdf8;">
-                <div style="font-size: 1.5rem; font-weight: bold; color: white;">${tTxt}</div><div style="color: #94a3b8; font-size: 0.9rem; margin-top: 5px;">${p.especialidad}</div>
-              </div>`;
+              historyContainer.innerHTML += `
+                <div style="border: 2px solid #2563eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 0.5rem;">
+                  <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${p.especialidad}</div>
+                  <div style="background: #2563eb; color: white; font-weight: 800; font-size: 1.6rem; text-align: center; padding: 0.3rem;">${tTxt}</div>
+                  <div style="background: white; color: #334155; font-weight: 700; font-size: 1rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.nombre}</div>
+                </div>
+              `;
             }
           }
         }
@@ -339,17 +343,21 @@ const app = {
     const mainContent = document.getElementById('tvContent');
     if (mainContent) {
       mainContent.innerHTML = `
-        <div style="font-size: clamp(4rem, 12vh, 7rem); color: #38bdf8; font-weight: 900; line-height: 1.1; margin-bottom: 0.5rem; text-shadow: 0 0 40px rgba(56,189,248,0.4); animation: pulse 2s infinite;">${turnoTxt}</div>
-        <div style="font-size: clamp(2.5rem, 8vh, 4.5rem); color: white; font-weight: 700; margin-bottom: 1.2rem; max-width: 90vw; word-break: break-word; line-height: 1.25; text-align: center;">${paciente.nombre}</div>
-        <div style="font-size: clamp(1.5rem, 4vh, 2.5rem); color: #cbd5e1; background: rgba(255,255,255,0.1); padding: 0.8rem 2.5rem; border-radius: 16px; border: 2px solid rgba(255,255,255,0.2);">Pasar a <strong style="color: #34d399;">${paciente.especialidad}</strong></div>
+        <div style="background: white; color: #dc2626; font-weight: 900; font-size: 2.5rem; padding: 0.5rem; text-transform: uppercase;">${paciente.especialidad}</div>
+        <div style="background: #dc2626; color: white; font-weight: 900; font-size: 4rem; padding: 0.5rem; animation: pulse 2s infinite;">${turnoTxt}</div>
+        <div style="background: white; color: #1e293b; font-weight: 800; font-size: 1.8rem; padding: 0.5rem; border-top: 2px solid #dc2626;">${paciente.nombre}</div>
       `;
     }
 
     const historyContainer = document.getElementById('tvUltimosLlamados');
     if (historyContainer) {
       const historyItem = document.createElement('div');
-      historyItem.style.cssText = "background: rgba(255,255,255,0.05); padding: 0.75rem 1rem; border-radius: 12px; min-width: 160px; border-left: 4px solid #38bdf8; flex-shrink: 0;";
-      historyItem.innerHTML = `<div style="font-size: 1.1rem; font-weight: bold; color: white;">${turnoTxt}</div><div style="color: #94a3b8; font-size: 0.8rem; margin-top: 3px;">${paciente.especialidad}</div>`;
+      historyItem.style.cssText = "border: 2px solid #2563eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 0.5rem; flex-shrink: 0;";
+      historyItem.innerHTML = `
+        <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${paciente.especialidad}</div>
+        <div style="background: #2563eb; color: white; font-weight: 800; font-size: 1.6rem; text-align: center; padding: 0.3rem;">${turnoTxt}</div>
+        <div style="background: white; color: #334155; font-weight: 700; font-size: 1rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${paciente.nombre}</div>
+      `;
 
       historyContainer.prepend(historyItem);
       if (historyContainer.children.length > 5) {

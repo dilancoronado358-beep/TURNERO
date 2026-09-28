@@ -317,33 +317,89 @@
 
     <!-- VISTA: Pantalla Pública (TV) -->
     <div id="view-tv" class="view"
-      style="position: fixed; inset: 0; z-index: 9999; background: #0f172a; margin: 0; padding: 0; max-width: none;">
-      <div style="height: 100vh; width: 100vw; display: flex; flex-direction: column; overflow: hidden;">
+      style="position: fixed; inset: 0; z-index: 9999; background: #ffffff; margin: 0; padding: 0; max-width: none;">
+      
+      <!-- Botón de Cerrar TV -->
+      <button onclick="app.cerrarModoTV()" style="position: absolute; top: 1rem; right: 1rem; z-index: 50; background: rgba(0,0,0,0.5); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-weight: bold;">✕ Cerrar TV</button>
 
-        <div
-          style="background: linear-gradient(135deg, var(--primary), #0369a1); color: white; padding: 1.5rem; text-align: center; font-size: 1.8rem; font-weight: 800; letter-spacing: 2px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); position: relative; z-index: 10;">
-          SISTEMA DE TURNOS - RENOVACIÓN MONTUFAREÑA
-          <button onclick="app.cerrarModoTV()"
-            style="position:absolute; right: 1.5rem; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-family: inherit; font-weight: bold; font-size: 0.9rem;">✕
-            Cerrar TV</button>
-        </div>
-
-        <div id="tvContent"
-          style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; overflow-y: auto;">
-          <div style="font-size: 2.5rem; color: #64748b; font-weight: 600;">Esperando llamados...</div>
-        </div>
-
-        <div
-          style="background: rgba(15, 23, 42, 0.95); padding: 1.5rem 2rem; border-top: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); z-index: 10;">
-          <h3
-            style="color: #94a3b8; margin-bottom: 1rem; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1px;">
-            Últimos Llamados</h3>
-          <div id="tvUltimosLlamados" style="display: flex; gap: 1.5rem; overflow-x: auto;">
-            <!-- items -->
+      <div style="height: 100vh; width: 100vw; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif;">
+        
+        <!-- Zona Principal (3 Columnas) -->
+        <div style="flex: 1; display: flex; flex-direction: row; padding: 1rem; gap: 1.5rem; overflow: hidden;">
+          
+          <!-- COLUMNA 1: HISTORIAL (25%) -->
+          <div style="width: 25%; display: flex; flex-direction: column;">
+            <!-- Logo -->
+            <div style="text-align: center; margin-bottom: 1rem;">
+              <img src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png" alt="Logo" style="max-height: 100px; object-fit: contain;">
+            </div>
+            
+            <!-- Lista de Turnos Pasados -->
+            <div id="tvUltimosLlamados" style="flex: 1; display: flex; flex-direction: column; gap: 0.8rem; overflow-y: hidden;">
+              <!-- Placeholder -->
+            </div>
+          </div>
+          
+          <!-- COLUMNA 2: VIDEO VERTICAL (35%) -->
+          <div style="width: 35%; border-radius: 16px; overflow: hidden; background: #000; box-shadow: 0 10px 25px rgba(0,0,0,0.3); position: relative;">
+               <!-- Para un video vertical, el contenedor estrecho y alto es ideal -->
+               <video id="tvVideoPlayer" autoplay muted controls style="width: 100%; height: 100%; object-fit: cover;">
+                 Tu navegador no soporta videos.
+               </video>
+          </div>
+          
+          <!-- COLUMNA 3: LLAMANDO ACTUAL (40%) -->
+          <div style="width: 40%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+              <h2 style="font-size: 2.5rem; font-weight: 900; color: #1e293b; margin-bottom: 1rem; text-transform: uppercase;">LLAMANDO:</h2>
+              
+              <div id="tvContent" style="width: 95%; border: 6px solid #dc2626; border-radius: 24px; overflow: hidden; box-shadow: 0 15px 35px rgba(0,0,0,0.25); text-align: center;">
+                 <div style="background: white; color: #dc2626; font-weight: 900; font-size: 3rem; padding: 1rem;">ESPERANDO LLAMADOS</div>
+                 <div style="background: #dc2626; color: white; font-weight: 900; font-size: 5rem; padding: 1.5rem;">---</div>
+              </div>
           </div>
         </div>
 
+        <!-- Barra Inferior -->
+        <div style="height: 60px; background: #2563eb; color: white; display: flex; justify-content: space-between; align-items: center; padding: 0 2rem; font-size: 1.2rem; font-weight: 600;">
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <svg style="width: 24px; height: 24px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <span id="tvClock">00:00:00</span>
+          </div>
+          <div>Gestión de filas de espera - Renovación Montufareña</div>
+          <div>www.fabianrobles.ec</div>
+        </div>
+        
       </div>
+      <script>
+        setInterval(() => {
+          const el = document.getElementById('tvClock');
+          if(el) {
+            el.innerText = new Date().toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit', second:'2-digit', hour12: true});
+          }
+        }, 1000);
+
+        // Reproducción secuencial de videos
+        document.addEventListener("DOMContentLoaded", () => {
+          const playlist = [
+            "https://res.cloudinary.com/dtmqftcsr/video/upload/v1790630558/WhatsApp_Video_2026-09-28_at_4.21.14_PM_vj0mo6.mp4",
+            "https://res.cloudinary.com/dtmqftcsr/video/upload/v1790631870/10MA_BRIGADA_final_1_ctiakd.mp4"
+          ];
+          let currentVideoIndex = 0;
+          const tvVideoPlayer = document.getElementById('tvVideoPlayer');
+          
+          if (tvVideoPlayer) {
+            // Asignar primer video
+            tvVideoPlayer.src = playlist[currentVideoIndex];
+            
+            // Al terminar, pasar al siguiente
+            tvVideoPlayer.addEventListener('ended', () => {
+              currentVideoIndex = (currentVideoIndex + 1) % playlist.length;
+              tvVideoPlayer.src = playlist[currentVideoIndex];
+              tvVideoPlayer.play().catch(e => console.log('Autoplay prevenido:', e));
+            });
+          }
+        });
+      </script>
     </div>
 
     <!-- VISTA: Dar Turno (Turnero / Recepción) -->
@@ -929,7 +985,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- App logic -->
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 
 </body>
 
