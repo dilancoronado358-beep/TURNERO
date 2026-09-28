@@ -120,8 +120,8 @@ body {
 }
 
 .circular-login {
-  width: 520px;
-  height: 520px;
+  width: 580px;
+  height: 580px;
   border-radius: 50% !important;
   background: rgba(40, 40, 40, 0.5) !important;
   backdrop-filter: blur(25px) !important;
