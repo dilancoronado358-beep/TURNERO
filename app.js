@@ -1065,17 +1065,16 @@ const app = {
   },
 
   async llamarATriaje(pacienteId) {
-    // Solo lanza la señal de TV (actualiza contador llamados) sin cambiar el estado
     if (!Estado.online || !sb) return;
     try {
       const { data } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', pacienteId).single();
-      if (!data) return;
       let sv = {};
-      try { sv = JSON.parse(data.signos_vitales || '{}'); } catch (e) { }
+      try { sv = JSON.parse((data?.signos_vitales) || '{}'); } catch (e) { }
       sv.llamados = (sv.llamados || 0) + 1;
 
+      // Cambiar estado a en_triaje Y actualizar contador para disparar TV
       const { error } = await sb.from('pacientes_espera')
-        .update({ signos_vitales: JSON.stringify(sv) })
+        .update({ estado: 'en_triaje', signos_vitales: JSON.stringify(sv) })
         .eq('id', pacienteId);
       if (error) throw error;
       this.toast('📢 Llamando en TV...', 'success');
