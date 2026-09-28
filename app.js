@@ -1675,6 +1675,25 @@ const app = {
         <!-- Cuerpo -->
         <div style="padding:1.5rem 1.75rem;display:flex;flex-direction:column;gap:1.25rem;">
 
+          <!-- Periodo de tiempo -->
+          <div>
+            <label style="
+              display:block;font-size:.78rem;font-weight:700;
+              text-transform:uppercase;letter-spacing:.08em;
+              color:#64748b;margin-bottom:.6rem;
+            ">🗓️ Periodo a Exportar</label>
+            <div style="display:flex;gap:1rem;">
+              <label style="flex:1; cursor:pointer; font-size:0.9rem; display:flex; align-items:center; gap:0.5rem; background:#f8fafc; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #e2e8f0; font-weight: 500; color: #334155;">
+                <input type="radio" name="excelPeriodo" value="actual" checked style="accent-color: #10b981; transform: scale(1.2);">
+                Solo Brigada Actual
+              </label>
+              <label style="flex:1; cursor:pointer; font-size:0.9rem; display:flex; align-items:center; gap:0.5rem; background:#f8fafc; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #e2e8f0; font-weight: 500; color: #334155;">
+                <input type="radio" name="excelPeriodo" value="historico" style="accent-color: #10b981; transform: scale(1.2);">
+                Todo el Histórico
+              </label>
+            </div>
+          </div>
+
           <!-- Especialidad -->
           <div>
             <label style="
@@ -1800,32 +1819,54 @@ const app = {
 
     const especialidadSel = document.getElementById('excelSelectEsp')?.value || 'TODAS LAS ESPECIALIDADES';
     const filtroSel = document.querySelector('input[name="excelFiltro"]:checked')?.value || 'todos';
+    const periodoSel = document.querySelector('input[name="excelPeriodo"]:checked')?.value || 'actual';
 
     this._cerrarModalExcel();
-    this.toast('⏳ Generando reporte Excel...', 'success');
+    this.toast('⏳ Generando reporte Excel (puede tardar un momento)...', 'success');
 
     try {
-      let query = sb.from('pacientes_espera').select('*')
-        .gte('created_at', Estado.brigadaDesde)
+      let queryBase = sb.from('pacientes_espera').select('*')
         .neq('nombre', '[SISTEMA_NUEVA_BRIGADA]');
+
+      if (periodoSel === 'actual') {
+        queryBase = queryBase.gte('created_at', Estado.brigadaDesde);
+      }
 
       // Filtrar por especialidad
       if (especialidadSel !== 'TODAS LAS ESPECIALIDADES') {
-        query = query.eq('especialidad', especialidadSel);
+        queryBase = queryBase.eq('especialidad', especialidadSel);
       }
 
       // Filtrar por estado
       if (filtroSel === 'lista') {
-        query = query.in('estado', ['en_espera', 'pendiente', 'en_consulta']);
+        queryBase = queryBase.in('estado', ['en_espera', 'pendiente', 'en_consulta']);
       } else if (filtroSel === 'atendidos') {
-        query = query.eq('estado', 'atendido');
+        queryBase = queryBase.eq('estado', 'atendido');
       }
-      // 'todos' → sin filtro adicional de estado
 
-      query = query.order('especialidad', { ascending: true }).order('created_at', { ascending: true });
+      queryBase = queryBase.order('especialidad', { ascending: true }).order('created_at', { ascending: true });
 
-      const { data, error } = await query;
-      if (error) throw error;
+      // Paginación para superar el límite de 1000 registros
+      let allData = [];
+      let fromRow = 0;
+      const step = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await queryBase.range(fromRow, fromRow + step - 1);
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allData = allData.concat(data);
+          fromRow += step;
+          if (data.length < step) hasMore = false;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const data = allData;
 
       if (!data || data.length === 0) {
         this.toast('No hay datos para exportar con ese filtro', 'error');
@@ -2342,9 +2383,29 @@ const app = {
   async generarDashboard() {
     if (!Estado.online || !sb) return;
     try {
-      // Obtener todos los turnos del día (la cola actual)
-      const { data, error } = await sb.from('pacientes_espera').select('*');
-      if (error) throw error;
+      let allData = [];
+      let fromRow = 0;
+      const step = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await sb.from('pacientes_espera')
+          .select('*')
+          .gte('created_at', Estado.brigadaDesde || '2000-01-01T00:00:00.000Z')
+          .range(fromRow, fromRow + step - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allData = allData.concat(data);
+          fromRow += step;
+          if (data.length < step) hasMore = false;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const data = allData;
 
       const total = data.length;
       const atendidos = data.filter(d => d.estado === 'atendido').length;
