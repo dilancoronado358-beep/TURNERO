@@ -83,10 +83,17 @@ body {
 #overlay {
   position: fixed;
   inset: 0;
-  background-color: #050505;
-  background-image: 
-    radial-gradient(circle at 80% 20%, rgba(200, 50, 200, 0.25) 0%, transparent 40%),
-    radial-gradient(circle at 20% 80%, rgba(255, 60, 50, 0.2) 0%, transparent 45%);
+  background-color: #101726;
+  /* Base un poco más clara */
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(16, 185, 129, 0.6) 0%, transparent 65%),
+    /* Verde más intenso y expansivo */
+    radial-gradient(circle at 85% 15%, rgba(59, 130, 246, 0.6) 0%, transparent 65%),
+    /* Azul más intenso y expansivo */
+    radial-gradient(circle at 50% 55%, rgba(255, 255, 255, 0.25) 0%, transparent 70%),
+    /* Blanco más claro */
+    radial-gradient(circle at 80% 85%, rgba(239, 68, 68, 0.6) 0%, transparent 65%);
+  /* Rojo más intenso y expansivo */
   z-index: 1000;
   display: flex;
   justify-content: center;
@@ -98,20 +105,16 @@ body {
 .abstract-waves {
   position: absolute;
   inset: 0;
-  background: repeating-radial-gradient(
-      circle at 100% 50%, 
-      transparent 0, 
-      transparent 4px, 
-      rgba(255,255,255,0.03) 5px, 
-      rgba(255,255,255,0.03) 6px
-    ),
-    repeating-radial-gradient(
-      circle at 0% 50%, 
-      transparent 0, 
-      transparent 4px, 
-      rgba(255,255,255,0.03) 5px, 
-      rgba(255,255,255,0.03) 6px
-    );
+  background: repeating-radial-gradient(circle at 100% 50%,
+      transparent 0,
+      transparent 4px,
+      rgba(255, 255, 255, 0.03) 5px,
+      rgba(255, 255, 255, 0.03) 6px),
+    repeating-radial-gradient(circle at 0% 50%,
+      transparent 0,
+      transparent 4px,
+      rgba(255, 255, 255, 0.03) 5px,
+      rgba(255, 255, 255, 0.03) 6px);
   pointer-events: none;
   opacity: 0.6;
 }
@@ -124,7 +127,7 @@ body {
   backdrop-filter: blur(25px) !important;
   -webkit-backdrop-filter: blur(25px) !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6), inset 0 0 40px rgba(255,255,255,0.03) !important;
+  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6), inset 0 0 40px rgba(255, 255, 255, 0.03) !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: center !important;
@@ -134,7 +137,8 @@ body {
   animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.circular-login::before, .circular-login::after {
+.circular-login::before,
+.circular-login::after {
   display: none !important;
 }
 
@@ -188,8 +192,8 @@ body {
   width: 120px;
   margin: 1.5rem auto 0;
   display: block;
-  background: linear-gradient(180deg, rgba(70,70,70,0.8), rgba(20,20,20,0.9));
-  border: 1px solid rgba(255,255,255,0.15);
+  background: linear-gradient(180deg, rgba(70, 70, 70, 0.8), rgba(20, 20, 20, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 30px;
   color: #fff;
   padding: 0.7rem 1.5rem;
@@ -197,19 +201,19 @@ body {
   font-weight: 500;
   letter-spacing: 0.5px;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
   transition: all 0.3s ease;
 }
 
 .login-btn-glass:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(0,0,0,0.6);
-  background: linear-gradient(180deg, rgba(80,80,80,0.8), rgba(30,30,30,0.9));
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+  background: linear-gradient(180deg, rgba(80, 80, 80, 0.8), rgba(30, 30, 30, 0.9));
 }
 
 .login-btn-glass:active {
   transform: translateY(1px);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
 .login-btn-glass.loading-animation {
@@ -223,6 +227,7 @@ body {
     box-shadow: 0 0 15px rgba(255, 255, 255, 0.2), inset 0 0 10px rgba(255, 255, 255, 0.1);
     transform: scale(0.98);
   }
+
   100% {
     box-shadow: 0 0 30px rgba(255, 255, 255, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.3);
     transform: scale(1.02);
@@ -237,14 +242,29 @@ body {
 }
 
 @keyframes ekg-draw {
-  0% { stroke-dashoffset: 200; }
-  50% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: -200; }
+  0% {
+    stroke-dashoffset: 200;
+  }
+
+  50% {
+    stroke-dashoffset: 0;
+  }
+
+  100% {
+    stroke-dashoffset: -200;
+  }
 }
 
 @keyframes pulse-text {
-  0% { opacity: 0.6; text-shadow: 0 0 5px rgba(16, 185, 129, 0.2); }
-  100% { opacity: 1; text-shadow: 0 0 15px rgba(16, 185, 129, 0.8); }
+  0% {
+    opacity: 0.6;
+    text-shadow: 0 0 5px rgba(16, 185, 129, 0.2);
+  }
+
+  100% {
+    opacity: 1;
+    text-shadow: 0 0 15px rgba(16, 185, 129, 0.8);
+  }
 }
 
 .login-footer-links {
@@ -268,14 +288,14 @@ body {
 .btn-tv-link {
   background: transparent;
   border: none;
-  color: rgba(255,255,255,0.3);
+  color: rgba(255, 255, 255, 0.3);
   font-size: 0.75rem;
   cursor: pointer;
   transition: color 0.3s ease;
 }
 
 .btn-tv-link:hover {
-  color: rgba(255,255,255,0.7);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 /* ============================================================
