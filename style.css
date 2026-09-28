@@ -84,7 +84,9 @@ body {
   position: fixed;
   inset: 0;
   background-color: #101726;
-  background-image: url("https://res.cloudinary.com/dtmqftcsr/image/upload/v1790628764/Gemini_Generated_Image_h5fm73h5fm73h5fm_xedmtj.jpg");
+  background-image: 
+    linear-gradient(rgba(10, 15, 25, 0.6), rgba(10, 15, 25, 0.6)),
+    url("https://res.cloudinary.com/dtmqftcsr/image/upload/v1790628764/Gemini_Generated_Image_h5fm73h5fm73h5fm_xedmtj.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
