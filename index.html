@@ -24,35 +24,259 @@
   <!-- =====================================================
        MODAL DE LOGIN
        ===================================================== -->
-  <div id="overlay">
-    <div class="modal">
-      <h2>Bienvenido 👋</h2>
-      <p class="modal-subtitle">Ingresa tus credenciales para acceder al sistema</p>
+  <div id="overlay" class="login-page">
+    <div class="abstract-waves"></div>
+    <div class="modal circular-login">
+      <div style="text-align: center; margin-bottom: 2rem;">
+        <img
+          src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png"
+          alt="Logo Renovación Montufareña"
+          style="max-height: 80px; width: auto; object-fit: contain; filter: brightness(0) invert(1);">
+      </div>
 
+      <!-- MEDICAL LOADER (Oculto por defecto) -->
+      <div id="medical-loader"
+        style="display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 200px;">
+        <svg width="150" height="60" viewBox="0 0 150 60" class="ekg-svg">
+          <path class="ekg-line" d="M 0,30 L 40,30 L 50,10 L 65,50 L 80,30 L 150,30" fill="none" stroke="#10b981"
+            stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <p
+          style="color: #10b981; margin-top: 1.5rem; font-weight: 500; font-size: 1.1rem; letter-spacing: 2px; animation: pulse-text 1.5s infinite alternate;">
+          Cargando Sistema...</p>
+      </div>
+
+      <!-- FORMULARIO DE LOGIN -->
       <div id="step-login" class="login-step active">
-        <div class="form-group">
-          <label for="loginUsername">Usuario</label>
-          <input type="text" id="loginUsername" placeholder="Ingresa tu usuario" autocomplete="off"
+        <div class="form-group-login">
+          <input type="text" id="loginUsername" placeholder="Usuario" autocomplete="off"
             onkeypress="if(event.key === 'Enter') document.getElementById('loginPassword').focus()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="login-icon">
+            <path fill-rule="evenodd"
+              d="M7.5 6a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.751 20.105a8.25 8.25 0 0 1 16.498 0 .75.75 0 0 1-.437.695A18.683 18.683 0 0 1 12 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 0 1-.437-.695Z"
+              clip-rule="evenodd" />
+          </svg>
         </div>
-        <div class="form-group" style="margin-top: 1rem;">
-          <label for="loginPassword">Contraseña</label>
-          <input type="password" id="loginPassword" placeholder="••••••••"
-            onkeypress="if(event.key === 'Enter') app.iniciarSesion()">
+        <div class="form-group-login">
+          <input type="password" id="loginPassword" placeholder="••••••••" style="padding-left: 3rem;"
+            onkeypress="if(event.key === 'Enter') document.getElementById('btnIngresar').click()">
+          <!-- Candado a la izquierda -->
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="login-icon"
+            style="left: 1.2rem; right: auto;">
+            <path fill-rule="evenodd"
+              d="M12 1.5a5.25 5.25 0 0 0-5.25 5.25v3a3 3 0 0 0-3 3v6.75a3 3 0 0 0 3 3h10.5a3 3 0 0 0 3-3v-6.75a3 3 0 0 0-3-3v-3c0-2.9-2.35-5.25-5.25-5.25Zm3.75 8.25v-3a3.75 3.75 0 1 0-7.5 0v3h7.5Z"
+              clip-rule="evenodd" />
+          </svg>
+          <!-- Ojo a la derecha para ver contraseña -->
+          <svg id="eyeIcon" onclick="togglePassword()" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+            fill="currentColor" class="login-icon" style="cursor: pointer; pointer-events: auto;">
+            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+            <path fill-rule="evenodd"
+              d="M1.323 11.447C2.811 6.976 7.028 3.75 12.001 3.75c4.97 0 9.185 3.223 10.675 7.69.12.362.12.752 0 1.113-1.487 4.471-5.705 7.697-10.677 7.697-4.97 0-9.186-3.223-10.675-7.69a1.762 1.762 0 0 1 0-1.113ZM17.25 12a5.25 5.25 0 1 1-10.5 0 5.25 5.25 0 0 1 10.5 0Z"
+              clip-rule="evenodd" />
+          </svg>
         </div>
 
-        <button id="btnIngresar" class="btn-large" style="margin-top: 1.75rem;" onclick="app.iniciarSesion()">
-          Ingresar al Sistema
+        <button id="btnIngresar" class="login-btn-glass" onclick="iniciarAnimacionMedica()">
+          INGRESAR
         </button>
-        <div
-          style="text-align: center; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
-          <button class="btn-action"
-            style="background: transparent; border: 1.5px solid var(--primary); color: var(--primary); width: 100%; padding: 0.75rem;"
-            onclick="app.abrirModoTV()">📺 Abrir Pantalla Pública (TV)</button>
+
+        <div class="login-footer-links"
+          style="flex-direction: column; align-items: flex-start; gap: 0.6rem; margin-top: 1rem;">
+          <label class="login-link" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
+            <input type="checkbox" id="chkRecordarme" style="width: auto; margin: 0; padding: 0; cursor: pointer;">
+            Recordarme
+          </label>
+          <label class="login-link" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
+            <input type="checkbox" id="chkTerminos" style="width: auto; margin: 0; padding: 0; cursor: pointer;"> Acepto
+            los <a href="#" onclick="mostrarModalTexto('modal-terminos'); return false;"
+              style="color: #10b981; text-decoration: underline;">Términos y Condiciones</a>
+          </label>
+          <label class="login-link" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
+            <input type="checkbox" id="chkPrivacidad" style="width: auto; margin: 0; padding: 0; cursor: pointer;">
+            Acepto la <a href="#" onclick="mostrarModalTexto('modal-privacidad'); return false;"
+              style="color: #10b981; text-decoration: underline;">Política de Privacidad</a>
+          </label>
+        </div>
+
+        <div style="text-align: center; margin-top: 1rem;">
+          <button class="btn-tv-link" onclick="app.abrirModoTV()">📺 Abrir Pantalla Pública (TV)</button>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Modales de Texto (Términos y Privacidad) -->
+  <div id="modal-terminos"
+    style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center; padding: 1.5rem; backdrop-filter: blur(5px);">
+    <div
+      style="background: var(--surface-solid); padding: 2rem; border-radius: 16px; max-width: 700px; max-height: 85vh; overflow-y: auto; color: var(--text-dark); box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+      <h2
+        style="margin-bottom: 1.5rem; color: var(--primary); border-bottom: 2px solid var(--border); padding-bottom: 0.5rem;">
+        Términos y Condiciones de Uso</h2>
+
+      <div
+        style="font-size: 0.9rem; line-height: 1.6; color: var(--text-body); display: flex; flex-direction: column; gap: 1rem;">
+        <p><strong>1. Aceptación de los Términos</strong><br>
+          Al acceder y utilizar el Sistema de Turnos de la Unidad de Salud Renovación Montufareña, usted acepta
+          someterse a estos Términos y Condiciones. Este sistema está diseñado exclusivamente para el uso del personal
+          médico, administrativo y de apoyo debidamente autorizado.</p>
+
+        <p><strong>2. Uso del Sistema y Credenciales</strong><br>
+          El acceso al sistema se realiza mediante credenciales estrictamente personales e intransferibles. Usted es
+          completamente responsable de mantener la confidencialidad de su usuario y contraseña. Cualquier acción
+          realizada bajo su cuenta será atribuida directamente a su persona. Queda terminantemente prohibido compartir
+          accesos o permitir que terceros utilicen el sistema en su nombre.</p>
+
+        <p><strong>3. Responsabilidad sobre la Información Médica</strong><br>
+          Toda la información ingresada, modificada o consultada en este sistema, incluyendo Historias Clínicas,
+          diagnósticos, recetas y asignación de turnos, debe ser veraz, exacta y profesional. La alteración maliciosa o
+          negligente de registros médicos es una falta grave que puede derivar en acciones administrativas o legales.
+        </p>
+
+        <p><strong>4. Auditoría y Trazabilidad</strong><br>
+          El sistema cuenta con mecanismos de auditoría continua. Se registran las direcciones IP, horas de acceso y
+          todos los movimientos realizados (creación, edición o eliminación de registros). Esta información podrá ser
+          utilizada por la administración para investigaciones internas o auditorías de calidad.</p>
+
+        <p><strong>5. Suspensión del Acceso</strong><br>
+          La Unidad de Salud Renovación Montufareña se reserva el derecho de suspender o revocar permanentemente el
+          acceso a cualquier usuario que infrinja estos términos, vulnere la seguridad del sistema o haga un uso
+          indebido de la información clínica de los pacientes.</p>
+      </div>
+
+      <div style="text-align: right; margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+        <button onclick="cerrarModalTexto('modal-terminos')"
+          style="background: var(--primary); color: white; padding: 0.6rem 2rem; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; font-size: 1rem;">Entendido
+          y Aceptado</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-privacidad"
+    style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center; padding: 1.5rem; backdrop-filter: blur(5px);">
+    <div
+      style="background: var(--surface-solid); padding: 2rem; border-radius: 16px; max-width: 700px; max-height: 85vh; overflow-y: auto; color: var(--text-dark); box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+      <h2
+        style="margin-bottom: 1.5rem; color: var(--primary); border-bottom: 2px solid var(--border); padding-bottom: 0.5rem;">
+        Política de Privacidad de Datos</h2>
+
+      <div
+        style="font-size: 0.9rem; line-height: 1.6; color: var(--text-body); display: flex; flex-direction: column; gap: 1rem;">
+        <p><strong>1. Naturaleza y Confidencialidad de los Datos</strong><br>
+          Los datos procesados en este sistema consisten en información médica sensible (diagnósticos, tratamientos,
+          signos vitales y antecedentes). El centro de salud garantiza que el manejo de esta información se rige bajo
+          los más estrictos estándares del secreto profesional médico y las leyes nacionales de protección de datos
+          personales.</p>
+
+        <p><strong>2. Uso de la Información</strong><br>
+          La información recopilada será utilizada única y exclusivamente con el fin de proporcionar atención médica
+          oportuna, dar seguimiento clínico a los pacientes y organizar eficientemente la gestión de turnos diarios. No
+          se utilizarán los datos con fines comerciales, de marketing ni de lucro.</p>
+
+        <p><strong>3. Divulgación a Terceros</strong><br>
+          Queda expresamente prohibida la divulgación, exportación, copia o distribución de los datos clínicos de los
+          pacientes a terceras partes ajenas a la institución. Solo se compartirá información en casos de obligación
+          legal, mandato judicial o para derivaciones médicas donde el paciente haya otorgado su consentimiento
+          explícito.</p>
+
+        <p><strong>4. Medidas de Seguridad</strong><br>
+          El sistema implementa cifrado en tránsito y en reposo para proteger la integridad de los datos. El personal
+          solo tendrá acceso a los datos de los pacientes mediante sus perfiles asignados, restringiendo la
+          visualización a lo estrictamente necesario según su rol (médico, enfermera o recepcionista).</p>
+
+        <p><strong>5. Derechos del Paciente</strong><br>
+          El centro de salud reconoce el derecho de los pacientes a solicitar acceso, rectificación o actualización de
+          su historia clínica en cualquier momento, gestionado a través de los canales administrativos correspondientes.
+        </p>
+      </div>
+
+      <div style="text-align: right; margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+        <button onclick="cerrarModalTexto('modal-privacidad')"
+          style="background: var(--primary); color: white; padding: 0.6rem 2rem; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; font-size: 1rem;">Entendido
+          y Aceptado</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function mostrarModalTexto(id) {
+      document.getElementById(id).style.display = 'flex';
+    }
+    function cerrarModalTexto(id) {
+      document.getElementById(id).style.display = 'none';
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      // Cargar preferencias guardadas
+      if (localStorage.getItem('aceptadoTerminos') === 'true') document.getElementById('chkTerminos').checked = true;
+      if (localStorage.getItem('aceptadoPrivacidad') === 'true') document.getElementById('chkPrivacidad').checked = true;
+      if (localStorage.getItem('recordarme') === 'true') document.getElementById('chkRecordarme').checked = true;
+    });
+
+    function togglePassword() {
+      const input = document.getElementById('loginPassword');
+      if (input.type === 'password') {
+        input.type = 'text';
+        document.getElementById('eyeIcon').style.opacity = '0.5';
+      } else {
+        input.type = 'password';
+        document.getElementById('eyeIcon').style.opacity = '1';
+      }
+    }
+
+    function iniciarAnimacionMedica() {
+      const chkTerminos = document.getElementById('chkTerminos').checked;
+      const chkPrivacidad = document.getElementById('chkPrivacidad').checked;
+
+      if (!chkTerminos || !chkPrivacidad) {
+        alert("Debes aceptar los Términos y Condiciones y la Política de Privacidad para continuar.");
+        return;
+      }
+
+      // Guardar preferencias si todo está bien
+      localStorage.setItem('aceptadoTerminos', 'true');
+      localStorage.setItem('aceptadoPrivacidad', 'true');
+      localStorage.setItem('recordarme', document.getElementById('chkRecordarme').checked);
+
+      document.getElementById('btnIngresar').classList.add('loading-animation');
+
+      // Ocultar formulario de login suavemente
+      document.getElementById('step-login').style.opacity = '0';
+      document.getElementById('step-login').style.transition = 'opacity 0.3s ease';
+
+      setTimeout(() => {
+        document.getElementById('step-login').style.display = 'none';
+        // Mostrar animación médica
+        const loader = document.getElementById('medical-loader');
+        loader.style.display = 'flex';
+        loader.style.opacity = '0';
+        setTimeout(() => {
+          loader.style.transition = 'opacity 0.5s ease';
+          loader.style.opacity = '1';
+        }, 50);
+
+        // Esperar 2.5 segundos para la animación y luego llamar la función original
+        setTimeout(() => {
+          app.iniciarSesion();
+        }, 2500);
+      }, 300);
+    }
+
+    function salirYRestaurar() {
+      app.cerrarSesion();
+      // Restaurar el login
+      const loader = document.getElementById('medical-loader');
+      const login = document.getElementById('step-login');
+      if (loader && login) {
+        loader.style.display = 'none';
+        loader.style.opacity = '0';
+        login.style.display = 'block';
+        login.style.opacity = '1';
+      }
+      document.getElementById('btnIngresar').classList.remove('loading-animation');
+    }
+  </script>
 
   <!-- =====================================================
        HEADER
@@ -67,7 +291,7 @@
     <div class="user-info" id="userInfoDisplay">
       <span id="roleBadge"></span>
       <strong id="displayUserName"></strong>
-      <button class="logout-btn" onclick="app.cerrarSesion()">Salir</button>
+      <button class="logout-btn" onclick="salirYRestaurar()">Salir</button>
     </div>
   </header>
 
