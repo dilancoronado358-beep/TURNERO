@@ -21,6 +21,7 @@ const AREAS_ESTATICAS = [
   'Nutrición',
   'Urología',
   'Imagenología',
+  'Electrocardiograma',
   'Farmacia',
   'Corte de Cabello'
 ];
@@ -39,6 +40,7 @@ const OPCIONES_ESPECIALIDAD = [
   { label: 'Nutrición', area: 'Nutrición', motivo: null },
   { label: 'Urología', area: 'Urología', motivo: null },
   { label: 'Imagenología', area: 'Imagenología', motivo: null },
+  { label: 'Electrocardiograma', area: 'Electrocardiograma', motivo: null },
   { label: 'Farmacia', area: 'Farmacia', motivo: null },
   { label: 'Corte de Cabello', area: 'Corte de Cabello', motivo: null }
 ];
@@ -193,6 +195,11 @@ const app = {
     const btnDash = document.getElementById('navBtnDashboard');
     if (btnDash) {
       btnDash.style.display = Estado.role === 'admin' ? 'inline-block' : 'none';
+    }
+
+    const btnEstado = document.getElementById('navBtnEstadoTurnos');
+    if (btnEstado) {
+      btnEstado.style.display = (Estado.role === 'turnero' || Estado.role === 'admin') ? 'inline-block' : 'none';
     }
   },
 
@@ -2778,6 +2785,76 @@ const app = {
       },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: '#94a3b8' } }, x: { ticks: { color: '#94a3b8' } } } }
     });
+  },
+
+  // ============================================================
+  // ESTADO DE TURNOS POR ESPECIALIDAD
+  // ============================================================
+  abrirEstadoTurnos() {
+    this.activarTab('EstadoTurnos');
+    this.mostrarVista('estadoTurnos');
+    this.cargarEstadoTurnos();
+  },
+
+  async cargarEstadoTurnos() {
+    const grid = document.getElementById('gridEstadoTurnos');
+    if (!grid) return;
+    grid.innerHTML = '<div style="color:var(--text-muted); text-align:center; width:100%;">Cargando estado...</div>';
+    
+    if (!Estado.online || !sb) return;
+
+    try {
+      const { data, error } = await sb.from('pacientes_espera')
+        .select('especialidad, estado, numero_turno_area, atendido_por')
+        .gte('created_at', Estado.brigadaDesde)
+        .order('numero_turno_area', { ascending: false });
+        
+      if (error) throw error;
+      
+      const areas = {};
+      data.forEach(p => {
+        if (!p.especialidad) return;
+        if (!areas[p.especialidad]) {
+          areas[p.especialidad] = { atendiendo: null, enEspera: 0, total: 0 };
+        }
+        areas[p.especialidad].total++;
+        if (p.estado === 'en_espera' || p.estado === 'pendiente') {
+          areas[p.especialidad].enEspera++;
+        }
+        // El último que entró a consulta es el que están atendiendo
+        if (p.estado === 'en_consulta' && !areas[p.especialidad].atendiendo) {
+          areas[p.especialidad].atendiendo = p.numero_turno_area || 'S/N';
+          areas[p.especialidad].doctor = p.atendido_por || 'N/A';
+        }
+      });
+      
+      let html = '';
+      if (Object.keys(areas).length === 0) {
+        html = '<div style="color:var(--text-muted); text-align:center; width:100%;">No hay registros de turnos en esta brigada.</div>';
+      } else {
+        Object.keys(areas).sort().forEach(esp => {
+          const a = areas[esp];
+          html += `
+            <div style="background: var(--surface-solid); border-radius: var(--radius-md); padding: 1.5rem; border: 1px solid var(--border); box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+              <h3 style="margin-top:0; color: var(--primary); font-size: 1.2rem; margin-bottom: 1rem; border-bottom: 2px solid rgba(14,165,233,0.1); padding-bottom: 0.5rem;">${esp}</h3>
+              <div style="margin-bottom: 0.8rem;">
+                <span style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Atendiendo Turno:</span><br>
+                <strong style="font-size: 1.8rem; color: ${a.atendiendo ? 'var(--success)' : 'var(--text-muted)'};">${a.atendiendo ? a.atendiendo : '--'}</strong>
+              </div>
+              <div style="font-size: 0.9rem; margin-bottom: 0.3rem;">
+                👨‍⚕️ Dr/a: <strong style="color: var(--text-dark);">${a.doctor || 'N/A'}</strong>
+              </div>
+              <div style="font-size: 0.9rem;">
+                👥 En espera: <strong style="color: #f59e0b;">${a.enEspera}</strong>
+              </div>
+            </div>
+          `;
+        });
+      }
+      grid.innerHTML = html;
+    } catch (e) {
+      grid.innerHTML = `<div style="color:red; text-align:center; width:100%;">Error: ${e.message}</div>`;
+    }
   },
 
   // ---- TOAST ----

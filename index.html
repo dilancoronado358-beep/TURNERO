@@ -305,6 +305,7 @@
       <button class="nav-item active" id="navBtnPrincipal" onclick="app.restaurarVistaSegunRol()">🏠 Panel
         Principal</button>
       <button class="nav-item" id="navBtnHistoria" onclick="app.abrirHistoriaClinica()">📖 Historia Clínica</button>
+      <button class="nav-item" id="navBtnEstadoTurnos" onclick="app.abrirEstadoTurnos()" style="display: none;">👀 Estado Turnos</button>
       <button class="nav-item" id="navBtnDashboard" onclick="app.abrirDashboard()" style="display: none;">📊
         Dashboard</button>
     </div>
@@ -522,6 +523,20 @@
       </div>
     </div>
 
+    <!-- VISTA: Estado de Turnos por Especialidad -->
+    <div id="view-estadoTurnos" class="view">
+      <div class="card">
+        <div class="card-header">
+          <h2>👀 Estado de Turnos por Especialidad</h2>
+          <button onclick="app.cargarEstadoTurnos()" class="btn-action">🔄 Actualizar</button>
+        </div>
+        <p style="margin-bottom: 1.5rem; color: var(--text-muted);">Visualiza qué turno se está atendiendo actualmente en cada área o consultorio.</p>
+        <div id="gridEstadoTurnos" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem;">
+          <!-- Contenido dinámico -->
+        </div>
+      </div>
+    </div>
+
     <!-- VISTA: Enfermería (Lista de Triaje) -->
     <div id="view-triaje" class="view">
       <div class="next-patient triaje-banner">
@@ -529,7 +544,6 @@
         <div class="big-number" id="currentTriajeNumber">--</div>
         <div class="patient-name-display" id="currentTriajeName">Esperando pacientes...</div>
       </div>
-      f
       <div class="card">
         <div class="card-header">
           <h2>Cola de Recepción</h2>
@@ -990,7 +1004,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- App logic -->
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=18"></script>
 
 </body>
 
