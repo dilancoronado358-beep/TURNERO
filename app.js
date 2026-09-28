@@ -14,6 +14,7 @@ const AREAS_ESTATICAS = [
   'Odontología',
   'Pediatría',
   'Obstetricia',
+  'Papanicolaou',
   'Traumatología',
   'Fisioterapia',
   'Psicología Clínica',
@@ -31,7 +32,7 @@ const OPCIONES_ESPECIALIDAD = [
   { label: 'Odontología', area: 'Odontología', motivo: null },
   { label: 'Pediatría', area: 'Pediatría', motivo: null },
   { label: 'Obstetricia', area: 'Obstetricia', motivo: null },
-  { label: 'Solo Papanicolau', area: 'Obstetricia', motivo: 'Solo Papanicolau — Sin revisión general' },
+  { label: 'Solo Papanicolaou', area: 'Papanicolaou', motivo: null },
   { label: 'Traumatología', area: 'Traumatología', motivo: null },
   { label: 'Fisioterapia', area: 'Fisioterapia', motivo: null },
   { label: 'Psicología Clínica', area: 'Psicología Clínica', motivo: null },
@@ -1317,6 +1318,9 @@ const app = {
         divDerivacion.style.display = 'block';
       } else if (Estado.areaId === 'Medicina General') {
         selectDerivacion.innerHTML += '<option value="Imagenología">Derivar a Imagenología</option>';
+        divDerivacion.style.display = 'block';
+      } else if (Estado.areaId === 'Papanicolaou') {
+        selectDerivacion.innerHTML += '<option value="Obstetricia">Derivar a Obstetricia</option>';
         divDerivacion.style.display = 'block';
       } else {
         divDerivacion.style.display = 'none';
