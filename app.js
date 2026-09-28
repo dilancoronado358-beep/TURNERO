@@ -257,7 +257,7 @@ const app = {
     try {
       const { data, error } = await sb.from('pacientes_espera')
         .select('*')
-        .eq('estado', 'en_consulta')
+        .in('estado', ['en_consulta', 'en_triaje'])
         .gte('created_at', Estado.brigadaDesde)
         .order('id', { ascending: false });
 
@@ -275,15 +275,16 @@ const app = {
 
         // Mostrar datos en pantalla inmediatamente si ya hay pacientes en consulta
         if (data.length > 0) {
-          const paciente = data[0];
-          const turnoTxt = paciente.numero_turno_area
+          const esTriaje = paciente.estado === 'en_triaje';
+          const areaMostrar = esTriaje ? 'TRIAJE / ENFERMERÍA' : paciente.especialidad;
+          const turnoTxt = (paciente.numero_turno_area && !esTriaje)
             ? paciente.especialidad.substring(0, 3).toUpperCase() + '-' + paciente.numero_turno_area
-            : 'Nuevo Paciente';
+            : (esTriaje ? 'Tomar Signos' : 'Nuevo Paciente');
 
           const mainContent = document.getElementById('tvContent');
           if (mainContent) {
             mainContent.innerHTML = `
-               <div style="background: white; color: #dc2626; font-weight: 900; font-size: 2.5rem; padding: 0.5rem; text-transform: uppercase;">${paciente.especialidad}</div>
+               <div style="background: white; color: #dc2626; font-weight: 900; font-size: 2.5rem; padding: 0.5rem; text-transform: uppercase;">${areaMostrar}</div>
                <div style="background: #dc2626; color: white; font-weight: 900; font-size: 4rem; padding: 0.5rem;">${turnoTxt}</div>
                <div style="background: white; color: #1e293b; font-weight: 800; font-size: 1.8rem; padding: 0.5rem; border-top: 2px solid #dc2626;">${paciente.nombre}</div>
             `;
@@ -297,8 +298,8 @@ const app = {
               const tTxt = p.numero_turno_area ? p.especialidad.substring(0, 3).toUpperCase() + '-' + p.numero_turno_area : 'Turno';
               historyContainer.innerHTML += `
                 <div style="border: 2px solid #2563eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 0.5rem;">
-                  <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${p.especialidad}</div>
-                  <div style="background: #2563eb; color: white; font-weight: 800; font-size: 1.6rem; text-align: center; padding: 0.3rem;">${tTxt}</div>
+                  <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${p.estado === 'en_triaje' ? 'TRIAJE' : p.especialidad}</div>
+                  <div style="background: #2563eb; color: white; font-weight: 800; font-size: 1.6rem; text-align: center; padding: 0.3rem;">${p.estado === 'en_triaje' ? 'SIGNOS' : tTxt}</div>
                   <div style="background: white; color: #334155; font-weight: 700; font-size: 1rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.nombre}</div>
                 </div>
               `;
@@ -337,14 +338,16 @@ const app = {
   },
 
   anunciarTurnoTV(paciente) {
-    const turnoTxt = paciente.numero_turno_area
+    const esTriaje = paciente.estado === 'en_triaje';
+    const areaMostrar = esTriaje ? 'TRIAJE / ENFERMERÍA' : paciente.especialidad;
+    const turnoTxt = (paciente.numero_turno_area && !esTriaje)
       ? paciente.especialidad.substring(0, 3).toUpperCase() + '-' + paciente.numero_turno_area
-      : 'Nuevo Paciente';
+      : (esTriaje ? 'Tomar Signos' : 'Nuevo Paciente');
 
     const mainContent = document.getElementById('tvContent');
     if (mainContent) {
       mainContent.innerHTML = `
-        <div style="background: white; color: #dc2626; font-weight: 900; font-size: 2.5rem; padding: 0.5rem; text-transform: uppercase;">${paciente.especialidad}</div>
+        <div style="background: white; color: #dc2626; font-weight: 900; font-size: 2.5rem; padding: 0.5rem; text-transform: uppercase;">${areaMostrar}</div>
         <div style="background: #dc2626; color: white; font-weight: 900; font-size: 4rem; padding: 0.5rem; animation: pulse 2s infinite;">${turnoTxt}</div>
         <div style="background: white; color: #1e293b; font-weight: 800; font-size: 1.8rem; padding: 0.5rem; border-top: 2px solid #dc2626;">${paciente.nombre}</div>
       `;
@@ -355,8 +358,8 @@ const app = {
       const historyItem = document.createElement('div');
       historyItem.style.cssText = "border: 2px solid #2563eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 0.5rem; flex-shrink: 0;";
       historyItem.innerHTML = `
-        <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${paciente.especialidad}</div>
-        <div style="background: #2563eb; color: white; font-weight: 800; font-size: 1.6rem; text-align: center; padding: 0.3rem;">${turnoTxt}</div>
+        <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${esTriaje ? 'TRIAJE' : paciente.especialidad}</div>
+        <div style="background: #2563eb; color: white; font-weight: 800; font-size: 1.6rem; text-align: center; padding: 0.3rem;">${esTriaje ? 'SIGNOS' : turnoTxt}</div>
         <div style="background: white; color: #334155; font-weight: 700; font-size: 1rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${paciente.nombre}</div>
       `;
 
@@ -396,7 +399,9 @@ const app = {
         const synth = window.speechSynthesis;
         if (!synth) return;
 
-        const textoVoz = `Turno ${turnoTxt}. ${paciente.nombre}. Pasar a ${paciente.especialidad}.`;
+        const textoVoz = esTriaje
+          ? `Atención. ${paciente.nombre}. Pasar a Triaje y Enfermería.`
+          : `Turno ${turnoTxt}. ${paciente.nombre}. Pasar a ${paciente.especialidad}.`;
 
         const hablar = () => {
           synth.cancel();
@@ -942,8 +947,16 @@ const app = {
     if (!confirm('¿Estás seguro de cancelar esta cita?')) return;
     if (!Estado.online || !sb) return;
     try {
+      const { data: currentCita } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', citaId).single();
+      let sv = {};
+      if (currentCita && currentCita.signos_vitales) {
+        try { sv = JSON.parse(currentCita.signos_vitales); } catch(e){}
+      }
+      sv.cancelado_por = Estado.userName;
+      sv.motivo_cancelacion = "Cita cancelada desde agenda";
+
       const { error } = await sb.from('pacientes_espera')
-        .update({ estado: 'cancelado' })
+        .update({ estado: 'cancelado', signos_vitales: JSON.stringify(sv) })
         .eq('id', citaId);
       if (error) throw error;
       this.toast('🗑️ Cita cancelada', 'success');
@@ -971,10 +984,10 @@ const app = {
     }
 
     try {
-      // La enfermera ve TODOS los que están "en_espera" de la BRIGADA ACTIVA
+      // La enfermera ve TODOS los que están "en_espera" o "en_triaje" de la BRIGADA ACTIVA
       const { data, error } = await sb.from('pacientes_espera')
         .select('*')
-        .eq('estado', 'en_espera')
+        .in('estado', ['en_espera', 'en_triaje'])
         .gte('created_at', Estado.brigadaDesde)
         .order('created_at', { ascending: true });
       if (error) throw error;
@@ -1004,10 +1017,13 @@ const app = {
                     🏥 Área: <strong style="color:var(--primary);">${t.especialidad || 'Sin asignar'}</strong>
                   </div>
                 </div>
-                <div class="patient-actions">
-                  <button class="btn-action btn-call" onclick="app.abrirFormularioTriaje('${t.id}', '${(t.nombre || '').replace(/'/g, "\\'")}')">
+                <div class="patient-actions" style="display:flex; gap:0.5rem; flex-wrap:wrap; justify-content:flex-end;">
+                  ${t.estado === 'en_espera' ? `<button class="btn-action btn-call" onclick="app.llamarATriaje('${t.id}')">📢 Llamar a TV</button>` : ''}
+                  ${t.estado === 'en_triaje' ? `<button class="btn-action btn-call" onclick="app.volverALlamarTriaje('${t.id}')" style="background:var(--primary);">🔔 Re-llamar</button>` : ''}
+                  <button class="btn-action" style="background:var(--success);" onclick="app.abrirFormularioTriaje('${t.id}', '${(t.nombre || '').replace(/'/g, "\\'")}')">
                     🩺 Tomar Signos
                   </button>
+                  <button class="btn-action" style="background:var(--danger); padding:0.5rem 0.8rem;" onclick="app.marcarAusente('${t.id}', 'triaje')" title="Paciente No se Presentó">🚫 Ausente</button>
                 </div>
               </div>
             </li>`;
@@ -1038,6 +1054,41 @@ const app = {
       const text = item.innerText.toLowerCase();
       item.style.display = text.includes(filter) ? '' : 'none';
     });
+  },
+
+  async llamarATriaje(pacienteId) {
+    if (!Estado.online || !sb) return;
+    try {
+      const { error } = await sb.from('pacientes_espera')
+        .update({ estado: 'en_triaje' })
+        .eq('id', pacienteId);
+      if (error) throw error;
+      this.toast('📢 Llamando a paciente a Triaje...', 'success');
+      await this.cargarPacientesTriaje();
+    } catch (e) {
+      this.toast('Error al llamar', 'error');
+    }
+  },
+
+  async volverALlamarTriaje(pacienteId) {
+    if (!Estado.online || !sb) return;
+    try {
+      const { data } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', pacienteId).single();
+      if (!data) return;
+
+      let sv = {};
+      try { sv = JSON.parse(data.signos_vitales || '{}'); } catch (e) { }
+      sv.llamados = (sv.llamados || 1) + 1; 
+
+      const { error } = await sb.from('pacientes_espera')
+        .update({ signos_vitales: JSON.stringify(sv) })
+        .eq('id', pacienteId);
+      if (error) throw error;
+
+      this.toast('🔔 Volviendo a llamar en TV...', 'success');
+    } catch (e) {
+      this.toast('Error al re-llamar', 'error');
+    }
   },
 
   abrirFormularioTriaje(pacienteId, nombrePaciente) {
@@ -1173,13 +1224,18 @@ const app = {
           const enEspera = t.estado === 'en_espera';
           let btns = '';
           if (t.estado === 'pendiente') {
-            btns = `<button class="btn-action btn-call" onclick="app.cambiarEstado('${t.id}','en_consulta')">📢 Llamar</button>`;
+            btns = `
+              <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                <button class="btn-action btn-call" onclick="app.cambiarEstado('${t.id}','en_consulta')">📢 Llamar</button>
+                <button class="btn-action" style="background:var(--danger); padding:0.5rem 0.8rem;" onclick="app.marcarAusente('${t.id}', 'doctor')" title="Paciente No se Presentó">🚫 Ausente</button>
+              </div>`;
           }
           if (t.estado === 'en_consulta') {
             btns = `
               <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
                 <button class="btn-action" style="background: var(--primary); padding: 0.5rem 0.8rem;" onclick="app.volverALlamar('${t.id}')" title="Hacer sonar la TV nuevamente">🔔 Re-Llamar</button>
-                <button class="btn-action btn-done" onclick="app.abrirConsulta('${t.id}')" style="background:var(--success); padding: 0.5rem 0.8rem;">👨‍⚕️ Abrir Consulta</button>
+                <button class="btn-action btn-done" onclick="app.abrirConsulta('${t.id}')" style="background:var(--success); padding: 0.5rem 0.8rem;">👨‍⚕️ Consulta</button>
+                <button class="btn-action" style="background:var(--danger); padding:0.5rem 0.8rem;" onclick="app.marcarAusente('${t.id}', 'doctor')" title="Paciente No se Presentó">🚫 Ausente</button>
               </div>
             `;
           }
@@ -1256,6 +1312,108 @@ const app = {
       this.toast('🔔 Volviendo a llamar en TV...', 'success');
     } catch (e) {
       this.toast('Error al re-llamar', 'error');
+    }
+  },
+
+  marcarAusente(pacienteId, rol) {
+    const modal = document.createElement('div');
+    modal.id = 'modalAusente';
+    modal.style.cssText = `
+      position:fixed;inset:0;z-index:9999;
+      display:flex;align-items:center;justify-content:center;
+      padding:1rem;background:rgba(10,15,30,0.65);
+      backdrop-filter:blur(8px);animation:fadeIn .2s ease;
+    `;
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:20px;width:100%;max-width:400px;box-shadow:0 24px 64px rgba(0,0,0,0.25);overflow:hidden;animation:slideUp .3s cubic-bezier(.16,1,.3,1);font-family:'Outfit',sans-serif;">
+        <div style="background:#ef4444;padding:1.5rem;display:flex;align-items:center;gap:1rem;">
+          <div style="font-size:2.5rem;color:white;line-height:1;">⚠️</div>
+          <div style="flex:1;">
+            <div style="color:#fff;font-size:1.25rem;font-weight:800;">Paciente Ausente</div>
+            <div style="color:rgba(255,255,255,.9);font-size:.85rem;">¿Qué deseas hacer con el turno?</div>
+          </div>
+        </div>
+        <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+          <button onclick="app._procesarAusente('${pacienteId}', '${rol}', 'cancelar')" style="padding:1rem;background:#fef2f2;border:2px solid #fecaca;border-radius:12px;color:#dc2626;font-weight:700;font-size:1rem;cursor:pointer;transition:all .2s;text-align:left;display:flex;align-items:center;gap:0.75rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='#fef2f2'">
+            <span style="font-size:1.25rem;">❌</span>
+            <div>
+              <div style="font-weight:800;font-size:1rem;">Dar de Baja</div>
+              <div style="font-size:0.75rem;font-weight:500;opacity:0.8;">Eliminar de la lista de espera</div>
+            </div>
+          </button>
+          <button onclick="app._procesarAusente('${pacienteId}', '${rol}', 'reencolar')" style="padding:1rem;background:#f0fdf4;border:2px solid #bbf7d0;border-radius:12px;color:#16a34a;font-weight:700;font-size:1rem;cursor:pointer;transition:all .2s;text-align:left;display:flex;align-items:center;gap:0.75rem;" onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
+            <span style="font-size:1.25rem;">🔄</span>
+            <div>
+              <div style="font-weight:800;font-size:1rem;">Reasignar Turno</div>
+              <div style="font-size:0.75rem;font-weight:500;opacity:0.8;">Mover al final de la cola actual</div>
+            </div>
+          </button>
+          <button onclick="document.getElementById('modalAusente').remove()" style="padding:0.75rem;background:#f1f5f9;border:none;border-radius:12px;color:#64748b;font-weight:600;font-size:.9rem;cursor:pointer;margin-top:0.5rem;">Cancelar / Volver</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  },
+
+  async _procesarAusente(pacienteId, rol, accion) {
+    const modal = document.getElementById('modalAusente');
+    if (modal) modal.remove();
+    if (!Estado.online || !sb) return;
+
+    try {
+      if (accion === 'cancelar') {
+        const { data: currentP } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', pacienteId).single();
+        let sv = {};
+        if (currentP && currentP.signos_vitales) {
+          try { sv = JSON.parse(currentP.signos_vitales); } catch(e){}
+        }
+        sv.cancelado_por = Estado.userName;
+        sv.motivo_cancelacion = "Paciente dado de baja / Ausente";
+
+        const { error } = await sb.from('pacientes_espera')
+          .update({ estado: 'cancelado', signos_vitales: JSON.stringify(sv) })
+          .eq('id', pacienteId);
+        if (error) throw error;
+        this.toast('Paciente dado de baja (Ausente)', 'success');
+      } else if (accion === 'reencolar') {
+        let updateData = {
+          created_at: new Date().toISOString()
+        };
+
+        if (rol === 'triaje') {
+          updateData.estado = 'en_espera';
+        } else {
+          updateData.estado = 'pendiente';
+        }
+
+        // Siempre generar el SIGUIENTE número de turno para no mantener el viejo
+        const { data: pData } = await sb.from('pacientes_espera').select('especialidad').eq('id', pacienteId).single();
+        if (pData && pData.especialidad) {
+          const { data: maxData } = await sb.from('pacientes_espera')
+            .select('numero_turno_area')
+            .eq('especialidad', pData.especialidad)
+            .gte('created_at', Estado.brigadaDesde)
+            .not('numero_turno_area', 'is', null)
+            .order('numero_turno_area', { ascending: false })
+            .limit(1);
+
+          let numTurno = 1;
+          if (maxData && maxData.length > 0 && maxData[0].numero_turno_area) {
+            numTurno = maxData[0].numero_turno_area + 1;
+          }
+          updateData.numero_turno_area = numTurno;
+        }
+
+        const { error } = await sb.from('pacientes_espera').update(updateData).eq('id', pacienteId);
+        if (error) throw error;
+        this.toast('Paciente enviado al final de la cola con nuevo turno', 'success');
+      }
+
+      if (rol === 'triaje') this.cargarPacientesTriaje();
+      else this.cargarPacientesArea();
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al actualizar paciente', 'error');
     }
   },
 
@@ -2027,16 +2185,28 @@ const app = {
         'atendido': 'background: var(--success); color: white;',
         'en_consulta': 'background: var(--primary); color: white;',
         'en_espera': 'background: #f59e0b; color: white;',
-        'pendiente': 'background: #f59e0b; color: white;'
+        'pendiente': 'background: #f59e0b; color: white;',
+        'cancelado': 'background: #ef4444; color: white;'
       };
       const estadoBadge = `<span style="padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; ${estadoClases[reg.estado] || 'background: #cbd5e1; color: #334155;'}">${(reg.estado || '').toUpperCase()}</span>`;
+
+      const turnoInfo = reg.numero_turno_area 
+        ? ` - Turno: ${(reg.especialidad || '').substring(0, 3).toUpperCase()}-${reg.numero_turno_area}` 
+        : '';
+
+      const reactivarBtn = (reg.estado === 'cancelado' && Estado.role === 'turnero') 
+        ? `<button class="btn-action" style="background: var(--primary); padding: 0.2rem 0.6rem; font-size: 0.75rem; margin-left: 0.5rem;" onclick="app.reactivarTurnoAusente('${reg.id}')">🔄 Dar Nuevo Turno</button>`
+        : '';
 
       visitasHTML += `
         <div style="border-left: 3px solid var(--primary); margin-left: 1rem; padding-left: 1.5rem; padding-bottom: 2rem; position: relative;">
           <div style="position: absolute; left: -11px; top: 0; width: 18px; height: 18px; background: white; border: 3px solid var(--primary); border-radius: 50%;"></div>
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; margin-top: -5px;">
-            <strong style="font-size: 1.1rem; color: var(--text-color);">${fecha}</strong>
-            ${estadoBadge}
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; margin-top: -5px; flex-wrap: wrap; gap: 0.5rem;">
+            <strong style="font-size: 1.1rem; color: var(--text-color);">${fecha}${turnoInfo}</strong>
+            <div style="display: flex; align-items: center;">
+              ${estadoBadge}
+              ${reactivarBtn}
+            </div>
           </div>
           <div style="background: var(--bg); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem; margin-top: 0.5rem;">
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
@@ -2068,6 +2238,11 @@ const app = {
               <div style="background: rgba(14, 165, 233, 0.05); padding: 0.75rem; border-radius: 6px; font-size: 0.9rem; margin-bottom: 1rem; border: 1px solid rgba(14, 165, 233, 0.2); white-space: pre-wrap;">${sv.diagnostico}</div>
             ` : ''}
 
+            ${sv.cancelado_por ? `
+              <div style="font-size: 0.8rem; color: var(--danger); text-transform: uppercase; margin-bottom: 0.25rem; font-weight: bold;">Cancelado / Dado de baja por</div>
+              <div style="background: rgba(239, 68, 68, 0.05); padding: 0.75rem; border-radius: 6px; font-size: 0.9rem; margin-bottom: 1rem; border: 1px solid rgba(239, 68, 68, 0.2); color: var(--danger);"><strong>${sv.cancelado_por}</strong> - ${sv.motivo_cancelacion || 'Dado de baja'}</div>
+            ` : ''}
+
             ${sv.receta ? `
               <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.25rem;">Receta Médica ${sv.codigo_receta ? '(Cód: ' + sv.codigo_receta + ')' : ''}</div>
               <div style="background: rgba(16, 185, 129, 0.05); padding: 0.75rem; border-radius: 6px; font-size: 0.9rem; border: 1px solid rgba(16, 185, 129, 0.2); white-space: pre-wrap;">${sv.receta}</div>
@@ -2081,8 +2256,9 @@ const app = {
       <div style="margin-bottom: 2rem; background: var(--bg); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-color);">
         <h3 style="margin-bottom: 1rem; color: var(--primary); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
           <span>👤 Perfil del Paciente</span>
-          <div style="display: flex; align-items: center; gap: 1rem;">
-            <span style="font-size: 0.9rem; font-weight: normal; color: var(--text-muted);">${registros.length} atención(es) registrada(s)</span>
+          <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <span style="font-size: 0.9rem; font-weight: normal; color: var(--text-muted);">${registros.length} atención(es)</span>
+            <button class="btn-action" style="background: var(--primary); padding: 0.4rem 0.8rem; font-size: 0.9rem; min-width: auto; margin: 0;" onclick="app.abrirModalActualizarDatos('${p.cedula || ''}')">✏️ Actualizar Datos</button>
             <button class="btn-action" style="background: var(--success); padding: 0.4rem 0.8rem; font-size: 0.9rem; min-width: auto; margin: 0;" onclick="app.prepararNuevaCitaDesdeHistoria('${p.cedula || ''}')">📅 Agendar Cita</button>
           </div>
         </h3>
@@ -2115,6 +2291,96 @@ const app = {
     container.style.display = 'block';
   },
 
+  async abrirModalActualizarDatos(cedulaOriginal) {
+    if (!cedulaOriginal) {
+      this.toast('El paciente no tiene cédula válida para actualizar', 'error');
+      return;
+    }
+    if (!Estado.online || !sb) return;
+
+    try {
+      const { data: paciente } = await sb.from('pacientes_espera').select('*').eq('cedula', cedulaOriginal).order('created_at', {ascending: false}).limit(1).single();
+      if (!paciente) throw new Error('No se encontraron datos');
+
+      const modal = document.createElement('div');
+      modal.id = 'modalActualizarDatos';
+      modal.style.cssText = `
+        position:fixed;inset:0;z-index:9999;
+        display:flex;align-items:center;justify-content:center;
+        padding:1rem;background:rgba(10,15,30,0.65);
+        backdrop-filter:blur(8px);animation:fadeIn .2s ease;
+      `;
+      modal.innerHTML = `
+        <div style="background:var(--surface-solid);border-radius:16px;width:100%;max-width:500px;box-shadow:0 24px 64px rgba(0,0,0,0.25);overflow:hidden;animation:slideUp .3s cubic-bezier(.16,1,.3,1);font-family:'Outfit',sans-serif;color:var(--text-dark);">
+          <div style="background:var(--primary);padding:1.5rem;display:flex;align-items:center;gap:1rem;">
+            <div style="flex:1;">
+              <div style="color:#fff;font-size:1.25rem;font-weight:700;">✏️ Actualizar Datos</div>
+            </div>
+            <button onclick="document.getElementById('modalActualizarDatos').remove()" style="background:none;border:none;color:white;font-size:1.5rem;cursor:pointer;">&times;</button>
+          </div>
+          <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+            <div>
+              <label style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">Nombres y Apellidos</label>
+              <input type="text" id="updNombre" class="input-modern" value="${paciente.nombre || ''}" style="width:100%;">
+            </div>
+            <div>
+              <label style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">Número de Cédula</label>
+              <input type="text" id="updCedula" class="input-modern" value="${paciente.cedula || ''}" style="width:100%;">
+            </div>
+            <div>
+              <label style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">Número de Celular</label>
+              <input type="text" id="updCelular" class="input-modern" value="${paciente.celular || ''}" style="width:100%;">
+            </div>
+            <div>
+              <label style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">Dirección</label>
+              <input type="text" id="updDireccion" class="input-modern" value="${paciente.direccion || ''}" style="width:100%;">
+            </div>
+            
+            <div style="display:flex;gap:1rem;margin-top:1rem;">
+              <button class="btn-action" style="flex:1;background:var(--success);padding:0.8rem;" onclick="app.guardarActualizacionDatos('${cedulaOriginal}')">💾 Guardar Cambios</button>
+              <button class="btn-action" style="flex:1;background:#f1f5f9;color:#64748b;padding:0.8rem;" onclick="document.getElementById('modalActualizarDatos').remove()">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    } catch (e) {
+      this.toast('Error al obtener datos: ' + e.message, 'error');
+    }
+  },
+
+  async guardarActualizacionDatos(cedulaOriginal) {
+    const nombre = document.getElementById('updNombre').value.trim();
+    const cedula = document.getElementById('updCedula').value.trim();
+    const celular = document.getElementById('updCelular').value.trim();
+    const direccion = document.getElementById('updDireccion').value.trim();
+
+    if (!nombre || !cedula) {
+      this.toast('El nombre y la cédula son obligatorios', 'error');
+      return;
+    }
+    if (!Estado.online || !sb) return;
+
+    try {
+      // Actualizamos todos los registros de esta persona basándonos en su cédula original
+      const { error } = await sb.from('pacientes_espera').update({
+        nombre, cedula, celular, direccion
+      }).eq('cedula', cedulaOriginal);
+
+      if (error) throw error;
+      
+      this.toast('✅ Datos del paciente actualizados en todo su historial', 'success');
+      document.getElementById('modalActualizarDatos').remove();
+      
+      // Actualizar la búsqueda para reflejar los cambios
+      document.getElementById('inputBuscarHistoria').value = cedula;
+      this.buscarHistoriaClinica();
+
+    } catch (e) {
+      this.toast('Error al actualizar datos: ' + e.message, 'error');
+    }
+  },
+
   prepararNuevaCitaDesdeHistoria(cedula) {
     if (!cedula) {
       this.toast('El paciente no tiene cédula registrada. Búscalo manualmente.', 'error');
@@ -2129,6 +2395,45 @@ const app = {
       window.scrollTo(0, 0);
       this.toast('Completa los datos para agendar la cita.', 'info');
     });
+  },
+
+  async reactivarTurnoAusente(pacienteId) {
+    if (!confirm("¿Deseas reactivar este turno y enviarlo al final de la cola (Recepción / Signos Vitales)?")) return;
+    if (!Estado.online || !sb) return;
+
+    try {
+      let updateData = {
+        estado: 'en_espera',
+        created_at: new Date().toISOString()
+      };
+
+      const { data: pData } = await sb.from('pacientes_espera').select('especialidad').eq('id', pacienteId).single();
+      if (pData && pData.especialidad) {
+        const { data: maxData } = await sb.from('pacientes_espera')
+          .select('numero_turno_area')
+          .eq('especialidad', pData.especialidad)
+          .gte('created_at', Estado.brigadaDesde)
+          .not('numero_turno_area', 'is', null)
+          .order('numero_turno_area', { ascending: false })
+          .limit(1);
+
+        let numTurno = 1;
+        if (maxData && maxData.length > 0 && maxData[0].numero_turno_area) {
+          numTurno = maxData[0].numero_turno_area + 1;
+        }
+        updateData.numero_turno_area = numTurno;
+      }
+
+      const { error } = await sb.from('pacientes_espera').update(updateData).eq('id', pacienteId);
+
+      if (error) throw error;
+
+      this.toast('Turno reactivado exitosamente', 'success');
+      this.buscarHistoriaClinica(); // Refrescar la historia
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al reactivar el turno', 'error');
+    }
   },
 
   // ============================================================
@@ -2579,6 +2884,7 @@ const app = {
               <div style="text-align: right; opacity: 0.9;">
                 <div style="font-size: 1.6rem; font-weight: 800;">${totalVisitas}</div>
                 <div style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px;">Atenciones</div>
+                <button class="btn-action" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 0.4rem 0.8rem; font-size: 0.8rem; margin-top: 0.5rem; display: block; width: 100%; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'" onclick="app.abrirModalActualizarDatos('${pac.cedula || ''}')">✏️ Actualizar Datos</button>
               </div>
             </div>
           </div>
@@ -2607,12 +2913,16 @@ const app = {
         const nombreLimpio = v.nombre.startsWith('[') ? v.nombre.replace(/^\[.*?\]\s*/, '') : v.nombre;
         return `
                   <div style="margin-bottom: 1.5rem; position: relative;">
-                    <div style="position: absolute; left: -1.9rem; top: 0.3rem; width: 12px; height: 12px; border-radius: 50%; background: var(--primary);"></div>
-                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.3rem;">${fecha}</div>
+                    <div style="position: absolute; left: -1.9rem; top: 0.3rem; width: 12px; height: 12px; border-radius: 50%; background: ${v.estado === 'cancelado' ? 'var(--danger)' : 'var(--primary)'};"></div>
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.3rem; display: flex; justify-content: space-between; align-items: center;">
+                      <span>${fecha} ${v.estado === 'cancelado' ? '<span style="color:var(--danger); font-weight:bold; margin-left: 0.5rem;">[CANCELADO/AUSENTE]</span>' : ''}</span>
+                      ${(v.estado === 'cancelado' && Estado.role === 'turnero') ? `<button class="btn-action" style="background: var(--primary); padding: 0.2rem 0.6rem; font-size: 0.75rem; margin-left: 0.5rem;" onclick="app.reactivarTurnoAusente('${v.id}')">🔄 Dar Nuevo Turno</button>` : ''}
+                    </div>
                     <div style="font-weight: 700; color: var(--text-dark);">
-                      ${v.especialidad || 'N/A'}
+                      ${v.especialidad || 'N/A'} ${v.numero_turno_area ? `— Turno: ${(v.especialidad || '').substring(0,3).toUpperCase()}-${v.numero_turno_area}` : ''}
                       <span style="font-weight: 400; color: var(--text-muted);">— Atendido por: ${v.atendido_por || v.creado_por || 'N/A'}</span>
                     </div>
+                    ${v.estado === 'cancelado' ? `<div style="margin-top: 0.5rem; font-size: 0.88rem; background: rgba(239, 68, 68, 0.05); padding: 0.6rem 1rem; border-radius: 8px; border-left: 3px solid var(--danger); color: var(--danger);"><strong>Dado de baja por:</strong> ${svV.cancelado_por || 'N/A'} - ${svV.motivo_cancelacion || 'Dado de baja'}</div>` : ''}
                     ${svV.diagnostico ? `<div style="margin-top: 0.5rem; font-size: 0.88rem; background: rgba(0,0,0,0.03); padding: 0.6rem 1rem; border-radius: 8px; border-left: 3px solid var(--primary);"><strong>Dx:</strong> ${svV.diagnostico}</div>` : ''}
                     ${svV.receta ? `<div style="margin-top: 0.4rem; font-size: 0.85rem; background: rgba(16,185,129,0.05); padding: 0.6rem 1rem; border-radius: 8px; border-left: 3px solid var(--success);"><strong>Receta:</strong> ${svV.receta}</div>` : ''}
                     ${svV.farmacia_entrega ? `<div style="margin-top: 0.3rem; font-size: 0.8rem; color: var(--text-muted);">💊 Farmacia: <strong>${svV.farmacia_entrega}</strong>${svV.farmacia_notas ? ' — ' + svV.farmacia_notas : ''}</div>` : ''}

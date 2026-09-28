@@ -602,6 +602,11 @@
           </div>
         </div>
 
+        <div style="display:flex; gap:1rem; margin-bottom: 1.5rem;">
+          <button class="btn-large" style="background:var(--primary); flex:1;" onclick="app.llamarATriaje(document.getElementById('triajeTurnoId').value)">📢 Llamar a TV</button>
+          <button class="btn-large" style="background:var(--primary); flex:1;" onclick="app.volverALlamarTriaje(document.getElementById('triajeTurnoId').value)">🔔 Re-llamar a TV</button>
+        </div>
+
         <button id="btnGuardarTriaje" class="btn-large btn-success" onclick="app.guardarTriaje()">
           ✅ Guardar Signos y Asignar Turno
         </button>
@@ -985,7 +990,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- App logic -->
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=12"></script>
 
 </body>
 
