@@ -2794,12 +2794,22 @@ const app = {
     this.activarTab('EstadoTurnos');
     this.mostrarVista('estadoTurnos');
     this.cargarEstadoTurnos();
+    
+    if (Estado.estadoTurnosInterval) clearInterval(Estado.estadoTurnosInterval);
+    Estado.estadoTurnosInterval = setInterval(() => {
+      const vista = document.getElementById('view-estadoTurnos');
+      if (vista && vista.classList.contains('active')) {
+        this.cargarEstadoTurnos(true);
+      } else {
+        clearInterval(Estado.estadoTurnosInterval);
+      }
+    }, 5000);
   },
 
-  async cargarEstadoTurnos() {
+  async cargarEstadoTurnos(silent = false) {
     const grid = document.getElementById('gridEstadoTurnos');
     if (!grid) return;
-    grid.innerHTML = '<div style="color:var(--text-muted); text-align:center; width:100%;">Cargando estado...</div>';
+    if (!silent) grid.innerHTML = '<div style="color:var(--text-muted); text-align:center; width:100%;">Cargando estado...</div>';
     
     if (!Estado.online || !sb) return;
 
