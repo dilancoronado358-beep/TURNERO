@@ -2836,8 +2836,9 @@ const app = {
       if (error) throw error;
       
       const areas = {};
-      const signosVitalesActivos = []; // pacientes actualmente en_triaje
+      const signosVitalesActivos = []; // pacientes actualmente en en_triaje
       let signosEnEspera = 0;
+      let ultimoTriaje = null; // último que pasó por signos vitales (en_consulta o atendido)
 
       data.forEach(p => {
         if (!p.especialidad) return;
@@ -2864,6 +2865,17 @@ const app = {
           });
         }
 
+        // Guardar el último que ya pasó por triaje (acaba de ser atendido)
+        if ((p.estado === 'en_consulta' || p.estado === 'atendido') && !ultimoTriaje) {
+          ultimoTriaje = {
+            turno: p.numero_turno_area
+              ? `${(p.especialidad || '').substring(0, 3).toUpperCase()}-${p.numero_turno_area}`
+              : '—',
+            nombre: p.nombre || 'Desconocido',
+            especialidad: p.especialidad
+          };
+        }
+
         // El último en consulta o atendido es el que están atendiendo actualmente
         if ((p.estado === 'en_consulta' || p.estado === 'atendido') && !areas[p.especialidad].atendiendo) {
           areas[p.especialidad].atendiendo = p.numero_turno_area
@@ -2878,14 +2890,29 @@ const app = {
 
       // ── Tarjeta SIGNOS VITALES siempre visible si hay datos ──────────
       if (Object.keys(areas).length > 0) {
-        const listaPacientes = signosVitalesActivos.length > 0
-          ? signosVitalesActivos.map(sv => `
+        let listaPacientes;
+        if (signosVitalesActivos.length > 0) {
+          // Hay pacientes activos en triaje ahora mismo
+          listaPacientes = signosVitalesActivos.map(sv => `
               <div style="display:flex; justify-content:space-between; align-items:center; padding: 0.4rem 0; border-bottom: 1px solid var(--border);">
-                <span style="font-weight:700; color: var(--success); font-size: 1rem; min-width:40px;">#${sv.turno}</span>
+                <span style="font-weight:700; color: var(--success); font-size: 1rem; min-width:60px;">${sv.turno}</span>
                 <span style="font-weight:600; color: var(--text-dark); font-size:0.9rem; flex:1; margin:0 0.5rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sv.nombre}</span>
                 <span style="font-size:0.75rem; color: var(--text-muted); white-space:nowrap;">${sv.especialidad}</span>
-              </div>`).join('')
-          : `<div style="color:var(--text-muted); font-size:0.9rem; text-align:center; padding: 0.5rem 0;">Sin pacientes en este momento</div>`;
+              </div>`).join('');
+        } else if (ultimoTriaje) {
+          // No hay nadie activo, mostrar el último que pasó
+          listaPacientes = `
+            <div style="opacity:0.7;">
+              <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.3rem;">Último atendido:</div>
+              <div style="display:flex; justify-content:space-between; align-items:center; padding: 0.4rem 0;">
+                <span style="font-weight:700; color: #94a3b8; font-size: 1rem; min-width:60px;">${ultimoTriaje.turno}</span>
+                <span style="font-weight:600; color: var(--text-dark); font-size:0.9rem; flex:1; margin:0 0.5rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${ultimoTriaje.nombre}</span>
+                <span style="font-size:0.75rem; color: var(--text-muted); white-space:nowrap;">${ultimoTriaje.especialidad}</span>
+              </div>
+            </div>`;
+        } else {
+          listaPacientes = `<div style="color:var(--text-muted); font-size:0.9rem; text-align:center; padding: 0.5rem 0;">Sin pacientes en este momento</div>`;
+        }
 
         html += `
           <div style="background: var(--surface-solid); border-radius: var(--radius-md); padding: 1.5rem; border: 2px solid rgba(14,165,233,0.4); box-shadow: 0 4px 15px rgba(14,165,233,0.1); grid-column: 1 / -1;">
