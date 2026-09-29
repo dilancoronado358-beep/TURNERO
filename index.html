@@ -240,6 +240,28 @@
       localStorage.setItem('aceptadoTerminos', 'true');
       localStorage.setItem('aceptadoPrivacidad', 'true');
       localStorage.setItem('recordarme', document.getElementById('chkRecordarme').checked);
+      
+      const usuarioInput = document.getElementById('loginUsername').value;
+      const versionAct = localStorage.getItem('dp_version') || '1.0';
+      const evidencia = {
+        usuario: usuarioInput,
+        fecha: new Date().toISOString().split('T')[0],
+        hora: new Date().toLocaleTimeString('es-EC'),
+        version_politica: versionAct,
+        version_terminos: '1.0',
+        estado_aceptacion: 'Aceptado explícitamente'
+      };
+      
+      // Intentar guardar en Supabase si está disponible
+      if (typeof sb !== 'undefined' && sb) {
+        sb.from('evidencias_aceptacion').insert([evidencia]).then(({error}) => {
+          if (error) console.error('Error guardando evidencia en DB:', error);
+        });
+      } else {
+        const evidenciasArray = JSON.parse(localStorage.getItem('evidencias_aceptacion') || '[]');
+        evidenciasArray.push(evidencia);
+        localStorage.setItem('evidencias_aceptacion', JSON.stringify(evidenciasArray));
+      }
 
       document.getElementById('btnIngresar').classList.add('loading-animation');
 
@@ -920,6 +942,82 @@
           <button class="btn-action" style="background: var(--primary);" onclick="app.adminCrearUsuario()">
             💾 Guardar Usuario
           </button>
+        </div>
+
+        <!-- SECCIÓN: PROTECCIÓN DE DATOS -->
+        <div class="card-section" style="margin-top: 2rem; border-top: 2px solid var(--border); padding-top: 1.5rem;">
+          <h3>🛡️ Protección de Datos y Privacidad</h3>
+          <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Configuración para la generación de la Política de Privacidad en PDF.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label>Razón Social de la Clínica</label>
+              <input type="text" id="dpRazonSocial" placeholder="Ej: Unidad de Salud Renovación Montufareña">
+            </div>
+            <div class="form-group">
+              <label>RUC</label>
+              <input type="text" id="dpRuc" placeholder="Ej: 0490000000001">
+            </div>
+            <div class="form-group">
+              <label>Teléfono</label>
+              <input type="text" id="dpTelefono" placeholder="Ej: 02-222-3333">
+            </div>
+            <div class="form-group full-width">
+              <label>Dirección</label>
+              <input type="text" id="dpDireccion" placeholder="Ej: Calle Principal 123">
+            </div>
+            <div class="form-group full-width">
+              <label>Correo Electrónico</label>
+              <input type="email" id="dpCorreo" placeholder="Ej: info@clinica.com">
+            </div>
+          </div>
+
+          <h4 style="margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--text-dark);">Responsables de Revisión</h4>
+          <div class="form-grid">
+            <div class="form-group full-width" style="background: rgba(0,0,0,0.02); padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md);">
+              <label style="font-weight: bold; color: var(--primary);">Responsable de Revisión Jurídica</label>
+              <input type="text" id="dpJuridicoNombre" placeholder="Nombre completo" style="margin-bottom: 0.5rem;">
+              <input type="text" id="dpJuridicoId" placeholder="Identificación profesional (Opcional)" style="margin-bottom: 0.5rem;">
+              <input type="email" id="dpJuridicoCorreo" placeholder="Correo electrónico" style="margin-bottom: 0.5rem;">
+              <label>Firma (PNG/JPG con fondo transparente):</label>
+              <input type="file" id="dpJuridicoFirmaFile" accept="image/png, image/jpeg" onchange="app.cargarFirma(this, 'Juridico')">
+              <img id="dpJuridicoFirmaPreview" style="max-height: 80px; margin-top: 0.5rem; display: none; border: 1px dashed var(--border); padding: 0.5rem;" alt="Vista previa de firma">
+              <button class="btn-action" style="margin-top: 0.5rem; display: none; background: #dc2626;" id="dpJuridicoFirmaRemove" onclick="app.eliminarFirma('Juridico')">Eliminar Firma</button>
+            </div>
+
+            <div class="form-group full-width" style="background: rgba(0,0,0,0.02); padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md);">
+              <label style="font-weight: bold; color: var(--primary);">Responsable de Revisión Técnica y Seguridad</label>
+              <input type="text" id="dpTecnicoNombre" placeholder="Nombre completo" style="margin-bottom: 0.5rem;">
+              <input type="email" id="dpTecnicoCorreo" placeholder="Correo electrónico" style="margin-bottom: 0.5rem;">
+              <label>Firma (PNG/JPG con fondo transparente):</label>
+              <input type="file" id="dpTecnicoFirmaFile" accept="image/png, image/jpeg" onchange="app.cargarFirma(this, 'Tecnico')">
+              <img id="dpTecnicoFirmaPreview" style="max-height: 80px; margin-top: 0.5rem; display: none; border: 1px dashed var(--border); padding: 0.5rem;" alt="Vista previa de firma">
+              <button class="btn-action" style="margin-top: 0.5rem; display: none; background: #dc2626;" id="dpTecnicoFirmaRemove" onclick="app.eliminarFirma('Tecnico')">Eliminar Firma</button>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button class="btn-action" style="background: var(--primary);" onclick="app.guardarConfiguracionDP()">
+              💾 Guardar Configuración
+            </button>
+            <button class="btn-action btn-success" onclick="app.generarPDFPrivacidad()">
+              📄 Generar y Descargar PDF
+            </button>
+          </div>
+
+          <div style="margin-top: 1.5rem;">
+            <h4 style="margin-bottom: 0.5rem; color: var(--text-dark);">Historial de Documentos Generados</h4>
+            <ul class="patient-list" id="dpHistorialList">
+              <li>
+                <div class="state-empty">
+                  <span class="state-empty-icon">📂</span>
+                  <span class="state-empty-text">No hay documentos generados aún.</span>
+                </div>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <div class="card-header" style="margin-bottom: 1rem;">

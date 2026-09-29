@@ -143,6 +143,7 @@ const app = {
       this.cerrarOverlay('👑', 'Administrador');
       this.mostrarVista('admin');
       this.adminCargarUsuarios();
+      this.cargarConfiguracionDP();
       setTimeout(() => this._actualizarInfoBrigada(), 100);
     } else if (Estado.role === 'turnero') {
       this.cerrarOverlay('📝', Estado.userName);
@@ -3142,6 +3143,330 @@ const app = {
 
     container.innerHTML = html;
     container.style.display = 'block';
+  },
+
+  // ============================================================
+  // PROTECCIÓN DE DATOS Y PRIVACIDAD
+  // ============================================================
+  cargarFirma(input, tipo) {
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const preview = document.getElementById(`dp${tipo}FirmaPreview`);
+        const btnRemove = document.getElementById(`dp${tipo}FirmaRemove`);
+        preview.src = e.target.result;
+        preview.style.display = 'block';
+        btnRemove.style.display = 'inline-block';
+      };
+      reader.readAsDataURL(input.files[0]);
+    }
+  },
+
+  eliminarFirma(tipo) {
+    document.getElementById(`dp${tipo}FirmaFile`).value = '';
+    const preview = document.getElementById(`dp${tipo}FirmaPreview`);
+    const btnRemove = document.getElementById(`dp${tipo}FirmaRemove`);
+    preview.src = '';
+    preview.style.display = 'none';
+    btnRemove.style.display = 'none';
+  },
+
+  async guardarConfiguracionDP() {
+    if (!Estado.online || !sb) {
+      this.toast('No hay conexión a la base de datos', 'error');
+      return;
+    }
+
+    const config = {
+      razon_social: document.getElementById('dpRazonSocial').value,
+      ruc: document.getElementById('dpRuc').value,
+      telefono: document.getElementById('dpTelefono').value,
+      direccion: document.getElementById('dpDireccion').value,
+      correo: document.getElementById('dpCorreo').value,
+      juridico_nombre: document.getElementById('dpJuridicoNombre').value,
+      juridico_id: document.getElementById('dpJuridicoId').value,
+      juridico_correo: document.getElementById('dpJuridicoCorreo').value,
+      juridico_firma: document.getElementById('dpJuridicoFirmaPreview').src || '',
+      tecnico_nombre: document.getElementById('dpTecnicoNombre').value,
+      tecnico_correo: document.getElementById('dpTecnicoCorreo').value,
+      tecnico_firma: document.getElementById('dpTecnicoFirmaPreview').src || ''
+    };
+    
+    try {
+      // Obtener versión actual de la base de datos
+      const { data: currentData } = await sb.from('configuracion_clinica').select('*').limit(1);
+      let currentVersion = '1.0';
+      let isUpdate = false;
+      let idToUpdate = null;
+
+      if (currentData && currentData.length > 0) {
+        isUpdate = true;
+        idToUpdate = currentData[0].id;
+        currentVersion = currentData[0].version || '1.0';
+        
+        // Si hay algún cambio en los datos, incrementamos versión
+        const oldConfig = currentData[0];
+        let hasChanges = false;
+        for (let key in config) {
+          if (config[key] !== oldConfig[key]) hasChanges = true;
+        }
+
+        if (hasChanges) {
+          let v = parseFloat(currentVersion);
+          currentVersion = (v + 0.1).toFixed(1);
+        }
+      }
+
+      config.version = currentVersion;
+      config.updated_at = new Date().toISOString();
+      localStorage.setItem('dp_version', currentVersion); // Backup local para vista rápida
+
+      if (isUpdate) {
+        const { error } = await sb.from('configuracion_clinica').update(config).eq('id', idToUpdate);
+        if (error) throw error;
+      } else {
+        const { error } = await sb.from('configuracion_clinica').insert([config]);
+        if (error) throw error;
+      }
+
+      this.toast('Configuración guardada en Supabase. Versión actual: ' + currentVersion, 'success');
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al guardar en Supabase: ' + e.message, 'error');
+    }
+  },
+
+  async cargarConfiguracionDP() {
+    if (!Estado.online || !sb) return;
+
+    try {
+      const { data, error } = await sb.from('configuracion_clinica').select('*').limit(1);
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const config = data[0];
+        document.getElementById('dpRazonSocial').value = config.razon_social || '';
+        document.getElementById('dpRuc').value = config.ruc || '';
+        document.getElementById('dpTelefono').value = config.telefono || '';
+        document.getElementById('dpDireccion').value = config.direccion || '';
+        document.getElementById('dpCorreo').value = config.correo || '';
+        
+        document.getElementById('dpJuridicoNombre').value = config.juridico_nombre || '';
+        document.getElementById('dpJuridicoId').value = config.juridico_id || '';
+        document.getElementById('dpJuridicoCorreo').value = config.juridico_correo || '';
+        
+        if (config.juridico_firma && config.juridico_firma.startsWith('data:image')) {
+          document.getElementById('dpJuridicoFirmaPreview').src = config.juridico_firma;
+          document.getElementById('dpJuridicoFirmaPreview').style.display = 'block';
+          document.getElementById('dpJuridicoFirmaRemove').style.display = 'inline-block';
+        }
+        
+        document.getElementById('dpTecnicoNombre').value = config.tecnico_nombre || '';
+        document.getElementById('dpTecnicoCorreo').value = config.tecnico_correo || '';
+        
+        if (config.tecnico_firma && config.tecnico_firma.startsWith('data:image')) {
+          document.getElementById('dpTecnicoFirmaPreview').src = config.tecnico_firma;
+          document.getElementById('dpTecnicoFirmaPreview').style.display = 'block';
+          document.getElementById('dpTecnicoFirmaRemove').style.display = 'inline-block';
+        }
+
+        if (config.version) {
+           localStorage.setItem('dp_version', config.version);
+        }
+      }
+    } catch (e) {
+      console.error('Error cargando configuración:', e);
+    }
+    
+    this.actualizarHistorialDP();
+  },
+
+  async actualizarHistorialDP() {
+    const list = document.getElementById('dpHistorialList');
+    if (!list) return;
+
+    if (!Estado.online || !sb) {
+      list.innerHTML = '<li><div class="state-empty"><span class="state-empty-icon">⚠️</span><span class="state-empty-text">Sin conexión para cargar historial.</span></div></li>';
+      return;
+    }
+
+    try {
+      const { data, error } = await sb.from('historial_documentos_dp').select('*').order('fecha_generacion', { ascending: false });
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        list.innerHTML = '<li><div class="state-empty"><span class="state-empty-icon">📂</span><span class="state-empty-text">No hay documentos generados aún en la base de datos.</span></div></li>';
+        return;
+      }
+      
+      list.innerHTML = data.map(h => `
+        <li style="display:flex; justify-content:space-between; padding: 1rem; border-bottom: 1px solid var(--border);">
+          <div>
+            <strong>Versión ${h.version}</strong> - ${new Date(h.fecha_generacion).toLocaleString('es-EC')}
+            <div style="font-size:0.8rem; color:var(--text-muted);">Generado por: ${h.usuario} | ID: ${h.id}</div>
+          </div>
+        </li>
+      `).join('');
+
+    } catch (e) {
+      console.error(e);
+      list.innerHTML = '<li><div class="state-empty"><span class="state-empty-icon">❌</span><span class="state-empty-text">Error al cargar historial.</span></div></li>';
+    }
+  },
+
+  async generarPDFPrivacidad() {
+    if (!Estado.online || !sb) {
+      this.toast('Conexión requerida para generar PDF', 'error');
+      return;
+    }
+    
+    let config = null;
+    let version = '1.0';
+
+    try {
+      const { data } = await sb.from('configuracion_clinica').select('*').limit(1);
+      if (!data || data.length === 0) {
+        this.toast('Debes guardar la configuración antes de generar el PDF', 'error');
+        return;
+      }
+      config = data[0];
+      version = config.version || '1.0';
+    } catch (e) {
+      this.toast('Error cargando configuración', 'error');
+      return;
+    }
+
+    const fecha = new Date().toLocaleDateString('es-EC');
+    const hora = new Date().toLocaleTimeString('es-EC');
+    
+    const modalPrivacidadContent = document.querySelector('#modal-privacidad div[style*="flex-direction: column"]');
+    
+    let textoPolitica = '';
+    if (modalPrivacidadContent) {
+      textoPolitica = modalPrivacidadContent.innerHTML;
+    } else {
+      textoPolitica = '<p>No se encontró el texto de la política.</p>';
+    }
+
+    try {
+      this.toast('Abriendo documento para imprimir/guardar como PDF...', 'success');
+      
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        this.toast('Por favor permite las ventanas emergentes (pop-ups) para generar el PDF', 'error');
+        return;
+      }
+      
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Política de Privacidad v${version}</title>
+          <style>
+            @media print {
+              @page { margin: 1.5cm; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+            body { font-family: 'Inter', sans-serif; color: #333; padding: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 14px; }
+            td { padding: 8px; border: 1px solid #cbd5e1; }
+            .bg-gray { background: #f8fafc; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div style="text-align: center; margin-bottom: 30px;">
+            <img src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png" style="max-height: 80px;">
+            <h1 style="color: #1e293b; font-size: 24px; margin-top: 15px;">POLÍTICA DE PRIVACIDAD Y PROTECCIÓN DE DATOS PERSONALES</h1>
+          </div>
+          
+          <table>
+            <tr>
+              <td class="bg-gray">Razón Social</td>
+              <td>${config.razon_social || 'N/A'}</td>
+              <td class="bg-gray">RUC</td>
+              <td>${config.ruc || 'N/A'}</td>
+            </tr>
+            <tr>
+              <td class="bg-gray">Dirección</td>
+              <td colspan="3">${config.direccion || 'N/A'}</td>
+            </tr>
+            <tr>
+              <td class="bg-gray">Correo</td>
+              <td>${config.correo || 'N/A'}</td>
+              <td class="bg-gray">Teléfono</td>
+              <td>${config.telefono || 'N/A'}</td>
+            </tr>
+          </table>
+          
+          <div style="margin-bottom: 20px; font-size: 14px;">
+            <strong>Versión:</strong> ${version} <br>
+            <strong>Fecha de emisión / actualización:</strong> ${fecha} <br>
+          </div>
+
+          <div style="margin-bottom: 40px; font-size: 14px; line-height: 1.6; text-align: justify;">
+            ${textoPolitica}
+          </div>
+
+          <div style="page-break-inside: avoid;">
+            <h3 style="color: #1e293b; font-size: 18px; margin-bottom: 20px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">REVISIÓN Y RESPONSABLES</h3>
+            <p style="font-size: 12px; margin-bottom: 30px; font-style: italic;">
+              Documento revisado desde las perspectivas jurídica y técnica por los responsables indicados.
+            </p>
+
+            <table style="border: none; margin-top: 50px;">
+              <tr>
+                <td style="border: none; width: 50%; text-align: center; vertical-align: bottom; padding: 10px;">
+                  <div style="min-height: 80px; margin-bottom: 10px;">
+                    ${config.juridico_firma && config.juridico_firma.startsWith('data:image') ? `<img src="${config.juridico_firma}" style="max-height: 80px; max-width: 150px;">` : ''}
+                  </div>
+                  <div style="border-top: 1px solid #000; width: 80%; margin: 0 auto; padding-top: 10px;">
+                    <strong>FIRMA DEL RESPONSABLE JURÍDICO</strong><br>
+                    <span style="font-size: 12px;">${config.juridico_nombre || 'N/A'}</span><br>
+                    <span style="font-size: 12px;">Abogado / Especialista en Protección de Datos</span><br>
+                    ${config.juridico_id ? `<span style="font-size: 12px;">ID: ${config.juridico_id}</span><br>` : ''}
+                  </div>
+                </td>
+                <td style="border: none; width: 50%; text-align: center; vertical-align: bottom; padding: 10px;">
+                  <div style="min-height: 80px; margin-bottom: 10px;">
+                    ${config.tecnico_firma && config.tecnico_firma.startsWith('data:image') ? `<img src="${config.tecnico_firma}" style="max-height: 80px; max-width: 150px;">` : ''}
+                  </div>
+                  <div style="border-top: 1px solid #000; width: 80%; margin: 0 auto; padding-top: 10px;">
+                    <strong>FIRMA DEL RESPONSABLE TÉCNICO</strong><br>
+                    <span style="font-size: 12px;">${config.tecnico_nombre || 'N/A'}</span><br>
+                    <span style="font-size: 12px;">Especialista Técnico de Ciberseguridad</span><br>
+                  </div>
+                </td>
+              </tr>
+            </table>
+            
+            <div style="margin-top: 50px; font-size: 10px; color: #64748b; text-align: center;">
+              Documento generado por ${Estado.userName} el ${fecha} a las ${hora}. ID: ${Date.now()}
+            </div>
+          </div>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      
+      // Esperar a que las imágenes carguen antes de imprimir
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 500);
+
+      // Guardar en historial de Supabase
+      const { error } = await sb.from('historial_documentos_dp').insert([{
+        version: version,
+        usuario: Estado.userName
+      }]);
+      
+      if (error) console.error('Error insertando en historial', error);
+      this.actualizarHistorialDP();
+      
+    } catch (error) {
+      console.error(error);
+      this.toast('Error al generar PDF', 'error');
+    }
   },
 
   toast(msg, tipo) {
