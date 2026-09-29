@@ -1135,7 +1135,8 @@ const app = {
       presion: document.getElementById('triajePresion').value,
       temperatura: document.getElementById('triajeTemperatura').value,
       frecuencia: document.getElementById('triajeFrecuencia').value,
-      saturacion: document.getElementById('triajeSaturacion').value
+      saturacion: document.getElementById('triajeSaturacion').value,
+      triaje_at: new Date().toISOString()  // timestamp para ordenar en Estado de Turnos
     };
 
     try {
@@ -2829,7 +2830,7 @@ const app = {
 
     try {
       const { data, error } = await sb.from('pacientes_espera')
-        .select('nombre, especialidad, estado, numero_turno_area, atendido_por')
+        .select('nombre, especialidad, estado, numero_turno_area, atendido_por, signos_vitales')
         .gte('created_at', Estado.brigadaDesde)
         .order('numero_turno_area', { ascending: false });
         
@@ -2837,6 +2838,7 @@ const app = {
       
       const areas = {};
       const signosVitalesActivos = []; // pacientes actualmente en en_triaje
+      const candidatosUltimoTriaje = []; // todos los que ya pasaron por signos
       let signosEnEspera = 0;
       let ultimoTriaje = null; // último que pasó por signos vitales (en_consulta o atendido)
 
@@ -2849,9 +2851,19 @@ const app = {
 
         areas[p.especialidad].total++;
 
-        if (p.estado === 'en_espera' || p.estado === 'pendiente') {
+        // Contar en espera para signos: solo los que aún no han pasado (sin signos vitales guardados)
+        if (p.estado === 'en_espera') {
           areas[p.especialidad].enEspera++;
-          signosEnEspera++; // estos aún no han pasado por signos
+          signosEnEspera++;
+        }
+        if (p.estado === 'pendiente') {
+          // pendiente con signos_vitales guardados = ya pasó por signos, a esperar doctor
+          // pendiente sin signos_vitales = aún no pasó por signos
+          const tieneSV = p.signos_vitales && p.signos_vitales !== '{}';
+          if (!tieneSV) {
+            areas[p.especialidad].enEspera++;
+            signosEnEspera++;
+          }
         }
 
         if (p.estado === 'en_triaje') {
@@ -2865,15 +2877,26 @@ const app = {
           });
         }
 
-        // Guardar el último que ya pasó por triaje (acaba de ser atendido)
-        if ((p.estado === 'en_consulta' || p.estado === 'atendido') && !ultimoTriaje) {
-          ultimoTriaje = {
+        // Recolectar candidatos a "último triajado" (para elegir por updated_at más tarde)
+        const yaTriajado = (
+          (p.estado === 'pendiente' && p.signos_vitales && p.signos_vitales !== '{}') ||
+          p.estado === 'en_consulta' ||
+          p.estado === 'atendido'
+        );
+        if (yaTriajado) {
+          let triaje_at = '';
+          try {
+            const svObj = JSON.parse(p.signos_vitales || '{}');
+            triaje_at = svObj.triaje_at || '';
+          } catch(e) {}
+          candidatosUltimoTriaje.push({
             turno: p.numero_turno_area
               ? `${(p.especialidad || '').substring(0, 3).toUpperCase()}-${p.numero_turno_area}`
               : '—',
             nombre: p.nombre || 'Desconocido',
-            especialidad: p.especialidad
-          };
+            especialidad: p.especialidad,
+            triaje_at
+          });
         }
 
         // El último en consulta o atendido es el que están atendiendo actualmente
@@ -2885,6 +2908,12 @@ const app = {
           areas[p.especialidad].paciente = p.nombre || 'Desconocido';
         }
       });
+
+      // Elegir el último triajado por timestamp de triaje (más reciente)
+      if (candidatosUltimoTriaje.length > 0) {
+        candidatosUltimoTriaje.sort((a, b) => b.triaje_at.localeCompare(a.triaje_at));
+        ultimoTriaje = candidatosUltimoTriaje[0];
+      }
 
       let html = '';
 
