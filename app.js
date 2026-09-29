@@ -2877,11 +2877,12 @@ const app = {
           });
         }
 
-        // Recolectar candidatos a "último triajado" (para elegir por updated_at más tarde)
+        // Recolectar candidatos a "último triajado" (para elegir por triaje_at más tarde)
         const yaTriajado = (
           (p.estado === 'pendiente' && p.signos_vitales && p.signos_vitales !== '{}') ||
           p.estado === 'en_consulta' ||
-          p.estado === 'atendido'
+          p.estado === 'atendido' ||
+          p.estado === 'cancelado'
         );
         if (yaTriajado) {
           let triaje_at = '';
@@ -2899,8 +2900,8 @@ const app = {
           });
         }
 
-        // El último en consulta o atendido es el que están atendiendo actualmente
-        if ((p.estado === 'en_consulta' || p.estado === 'atendido') && !areas[p.especialidad].atendiendo) {
+        // El último en consulta, atendido o cancelado es el turno más reciente de la especialidad
+        if ((p.estado === 'en_consulta' || p.estado === 'atendido' || p.estado === 'cancelado') && !areas[p.especialidad].atendiendo) {
           areas[p.especialidad].atendiendo = p.numero_turno_area
             ? `${(p.especialidad || '').substring(0, 3).toUpperCase()}-${p.numero_turno_area}`
             : 'S/N';
