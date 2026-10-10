@@ -1863,71 +1863,174 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb {
    RESPONSIVE DESIGN (MOBILE)
    ============================================================ */
 @media (max-width: 768px) {
-  /* Split Screen Login -> Stacked */
-  .login-page {
+
+  /* === LOGIN SPLIT-SCREEN -> STACKED === */
+  #overlay {
     flex-direction: column !important;
-    height: 100% !important;
+    height: auto !important;
+    min-height: 100vh !important;
     overflow-y: auto !important;
+    overflow-x: hidden !important;
+    position: relative !important;
   }
-  .login-page > div:first-child {
+
+  /* Blue left panel shrinks to a top banner */
+  #overlay > div:first-child {
     flex: 0 0 auto !important;
-    padding: 4rem 2rem 3rem 2rem !important;
+    width: 100% !important;
+    padding: 3.5rem 1.5rem 2rem !important;
     justify-content: flex-start !important;
   }
-  .login-page > div:first-child h1 {
-    font-size: 2.2rem !important;
+  #overlay > div:first-child h1 {
+    font-size: 2rem !important;
   }
-  .login-page > div:first-child p {
-    font-size: 1rem !important;
-    margin-bottom: 1.5rem !important;
+  #overlay > div:first-child p {
+    font-size: 0.95rem !important;
+    margin-bottom: 1rem !important;
   }
-  .login-page > div:first-child .absolute-footer {
+  .absolute-footer {
     position: relative !important;
     left: 0 !important;
     bottom: 0 !important;
     margin-top: 1.5rem;
-    font-size: 0.8rem !important;
+    font-size: 0.78rem !important;
+    opacity: 0.7;
   }
-  
-  .login-page > div:last-child {
+
+  /* White right panel fills the rest */
+  #overlay > div:last-child {
     flex: 1 1 auto !important;
-    padding: 3rem 1.5rem !important;
+    width: 100% !important;
+    padding: 2.5rem 1.5rem 3rem !important;
     justify-content: flex-start !important;
     box-shadow: none !important;
   }
-  
-  /* Internal app adjustments */
-  main {
-    padding: 1rem;
-  }
-  .card {
-    padding: 1.5rem 1rem;
-  }
-  .card-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-  .card-header-actions {
-    width: 100%;
-  }
-  .btn-action {
-    flex: 1;
-    justify-content: center;
-  }
-  
+
+  /* === HEADER === */
   header {
-    flex-direction: column;
-    padding: 1rem;
-    gap: 1rem;
+    padding: 0.75rem 1rem !important;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  header .logo-area {
+    gap: 0.5rem;
+  }
+  header .logo-area img {
+    max-height: 32px !important;
+  }
+  header .logo-area span {
+    font-size: 0.9rem !important;
   }
   .user-info {
     width: 100%;
     justify-content: space-between;
+    gap: 0.5rem;
   }
-  
-  /* Form Grids */
+  #roleBadge {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+  }
+  .logout-btn {
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+  }
+
+  /* === NAVIGATION === */
+  .main-nav {
+    top: auto !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav-container {
+    padding: 0 0.5rem;
+    gap: 0;
+    min-width: max-content;
+  }
+  .nav-item {
+    padding: 0.9rem 0.75rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  /* === MAIN CONTENT === */
+  main {
+    padding: 1rem;
+  }
+  .card {
+    padding: 1.25rem 1rem;
+    border-radius: var(--radius-sm);
+  }
+  .card h2 {
+    font-size: 1.2rem;
+  }
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .card-header-actions {
+    width: 100%;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .card-header-actions .btn-action {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.8rem;
+    padding: 0.45rem 0.75rem;
+  }
+
+  /* === FORM GRIDS === */
   .form-grid {
     grid-template-columns: 1fr;
+  }
+  .full-width {
+    grid-column: 1;
+  }
+
+  /* === BUTTONS SIDE BY SIDE === */
+  .btn-large {
+    font-size: 0.95rem;
+    padding: 0.9rem 1rem;
+  }
+
+  /* Pair of buttons next to each other */
+  div[style*="display:flex"][style*="gap:1rem"],
+  div[style*="display: flex"][style*="gap: 1rem"] {
+    flex-direction: column !important;
+    gap: 0.6rem !important;
+  }
+
+  /* === PATIENT ITEMS === */
+  .patient-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .patient-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  /* === NEXT PATIENT BANNER === */
+  .next-patient {
+    padding: 1.25rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .next-patient .big-number {
+    font-size: 2rem;
+  }
+  .next-patient .patient-name-display {
+    font-size: 0.9rem;
+  }
+
+  /* === TABLE OVERFLOW === */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    font-size: 0.82rem;
   }
 }
