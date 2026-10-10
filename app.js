@@ -55,6 +55,9 @@ const Estado = {
   userName: '',
   adminPass: '',        // Se guarda temporalmente para las llamadas a RPC de admin
   areaId: null,         // Área seleccionada por el doctor
+  sede: 'Sede A',       // Sede actual (Lugar A, Lugar B) - Default to Sede A
+  nombreSedeA: 'Sede A',// Nombre público de la Sede A
+  nombreSedeB: 'Sede B',// Nombre público de la Sede B
   areas: [],
   enfermeras: [],
   online: false,
@@ -74,34 +77,69 @@ const app = {
 
     try {
       if (!window.supabase) throw new Error('SDK no disponible');
+      
+      // --- MONKEY PATCH FETCH PARA SEDES ---
+      const originalFetch = window.fetch;
+      window.__originalFetch = originalFetch.bind(window); // Guardar referencia segura
+      window.fetch = async function() {
+        let url = arguments[0];
+        let options = arguments[1] || {};
+        
+        let urlStr = '';
+        if (typeof url === 'string') urlStr = url;
+        else if (url instanceof URL) urlStr = url.toString();
+        else if (url && url.url) urlStr = url.url; // Request object (partial support)
+        else urlStr = String(url);
+        
+        if (urlStr.includes('/rest/v1/pacientes_espera')) {
+          const isGlobalSearch = urlStr.includes('skip_patch');
+          if (Estado.sede && !isGlobalSearch) {
+            // Para SELECT, UPDATE, DELETE (params en la URL)
+            if (!options.method || options.method === 'GET' || options.method === 'HEAD') {
+               urlStr += (urlStr.includes('?') ? '&' : '?') + 'sede=eq.' + encodeURIComponent(Estado.sede);
+            }
+            // Para INSERT y UPDATE (body en JSON)
+            if ((options.method === 'POST' || options.method === 'PATCH') && options.body) {
+              try {
+                let body = JSON.parse(options.body);
+                if (Array.isArray(body)) {
+                  body.forEach(item => item.sede = Estado.sede);
+                } else {
+                  body.sede = Estado.sede;
+                }
+                options.body = JSON.stringify(body);
+              } catch(e) { console.error('Fetch Patch Error', e); }
+            }
+          }
+        }
+        
+        if (url instanceof URL) {
+            arguments[0] = new URL(urlStr);
+        } else if (typeof url === 'string') {
+            arguments[0] = urlStr;
+        } else if (url && url.url && typeof url.clone === 'function') {
+            // If it's a Request object, we would need to clone and reconstruct it, 
+            // but supabase-js typically doesn't pass Request objects directly to the global fetch.
+            // We just override the url property if possible (it's read-only in standard Request, so we might fail here,
+            // but supabase uses fetch(string, options)).
+            arguments[0] = urlStr;
+        } else {
+            arguments[0] = urlStr;
+        }
+        arguments[1] = options;
+        return originalFetch.apply(window, arguments);
+      };
+      // -------------------------------------
+
       sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-      // Obtener el inicio de la brigada activa directamente desde la base de datos
-      // Esto soluciona problemas de zona horaria y sincroniza a todas las computadoras
-      const { data: bData, error: bError } = await sb.from('pacientes_espera')
-        .select('created_at')
-        .eq('nombre', '[SISTEMA_NUEVA_BRIGADA]')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (bData && bData.length > 0) {
-        Estado.brigadaDesde = bData[0].created_at;
-        localStorage.setItem('brigada_activa_desde', Estado.brigadaDesde);
-      } else {
-        Estado.brigadaDesde = '2000-01-01T00:00:00.000Z';
-        localStorage.setItem('brigada_activa_desde', Estado.brigadaDesde);
-      }
-
       Estado.online = true;
-      console.log('✅ Supabase en línea - Brigada desde:', Estado.brigadaDesde);
+      console.log('✅ Supabase en línea (Multi-Sede Activo)');
+      await this.cargarConfiguracionDP();
       this.verificarSesionGuardada();
     } catch (e) {
       Estado.online = false;
       console.warn('⚠️ Modo offline / tabla no lista:', e.message);
-
-      // Fallback a localStorage si no hay internet
-      const brigadaGuardada = localStorage.getItem('brigada_activa_desde');
-      Estado.brigadaDesde = brigadaGuardada || '2000-01-01T00:00:00.000Z';
     }
   },
 
@@ -122,6 +160,51 @@ const app = {
     }
   },
 
+  async obtenerInicioBrigada() {
+    if (!sb || !Estado.online) {
+      const bG = localStorage.getItem('brigada_activa_desde_' + Estado.sede);
+      Estado.brigadaDesde = bG || '2000-01-01T00:00:00.000Z';
+      return;
+    }
+    // Usar __originalFetch si está disponible (evita que el monkey patch interfiera)
+    const fetchFn = window.__originalFetch || window.fetch;
+    try {
+      // Buscar marcador con sede específica (nuevo formato)
+      const { data: bData1 } = await sb.from('pacientes_espera')
+        .select('created_at')
+        .eq('nombre', '[SISTEMA_NUEVA_BRIGADA_' + Estado.sede + ']')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      // Buscar marcador sin sede (formato legado)
+      const { data: bData2 } = await sb.from('pacientes_espera')
+        .select('created_at')
+        .eq('nombre', '[SISTEMA_NUEVA_BRIGADA]')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      // Tomar el más reciente entre los dos formatos
+      const candidatos = [];
+      if (Array.isArray(bData1) && bData1.length > 0) candidatos.push(bData1[0].created_at);
+      if (Array.isArray(bData2) && bData2.length > 0) candidatos.push(bData2[0].created_at);
+
+      if (candidatos.length > 0) {
+        candidatos.sort((a, b) => new Date(b) - new Date(a));
+        Estado.brigadaDesde = candidatos[0];
+        localStorage.setItem('brigada_activa_desde_' + Estado.sede, Estado.brigadaDesde);
+      } else {
+        // Sin brigada en BD, usar localStorage o fecha muy vieja
+        const bG = localStorage.getItem('brigada_activa_desde_' + Estado.sede);
+        Estado.brigadaDesde = bG || '2000-01-01T00:00:00.000Z';
+      }
+      console.log('✅ Brigada cargada para', Estado.sede, 'desde:', Estado.brigadaDesde);
+    } catch(e) {
+      console.error('Error obtenerInicioBrigada:', e);
+      const bG = localStorage.getItem('brigada_activa_desde_' + Estado.sede);
+      Estado.brigadaDesde = bG || '2000-01-01T00:00:00.000Z';
+    }
+  },
+
   verificarSesionGuardada() {
     const sesionInfo = localStorage.getItem('turnero_session');
     if (sesionInfo) {
@@ -131,6 +214,7 @@ const app = {
         Estado.userName = parsed.userName;
         Estado.areaId = parsed.areaId;
         Estado.adminPass = parsed.adminPass || '';
+        Estado.sede = parsed.sede || 'Sede A';
         this.restaurarVistaSegunRol();
       } catch (e) {
         console.error('Error parseando sesión', e);
@@ -139,9 +223,14 @@ const app = {
   },
 
   async restaurarVistaSegunRol() {
+    await this.obtenerInicioBrigada();
     if (Estado.role === 'admin') {
-      this.cerrarOverlay('👑', 'Administrador');
+      this.cerrarOverlay('👑', 'Admin (' + Estado.sede + ')');
       this.mostrarVista('admin');
+      
+      const select = document.getElementById('adminSedeSelector');
+      if (select) select.value = Estado.sede;
+      
       this.adminCargarUsuarios();
       this.cargarConfiguracionDP();
       setTimeout(() => this._actualizarInfoBrigada(), 100);
@@ -230,11 +319,25 @@ const app = {
   tvUltimos: [],
   tvPrimeraCargaHecha: false,
 
-  abrirModoTV() {
+  async abrirModoTV() {
     document.getElementById('overlay').style.display = 'none';
     const header = document.querySelector('header');
     if (header) header.style.display = 'none';
+    const loginSedeSelect = document.getElementById('loginSede');
+    if (loginSedeSelect && loginSedeSelect.value) {
+      Estado.sede = loginSedeSelect.value;
+    }
+
     this.mostrarVista('tv');
+
+    await this.obtenerInicioBrigada(); // Cargar brigada para la TV
+
+    const tvSedeDisplay = document.getElementById('tvSedeDisplay');
+    if (tvSedeDisplay) {
+      if (Estado.sede === 'Sede A') tvSedeDisplay.innerText = Estado.nombreSedeA;
+      else if (Estado.sede === 'Sede B') tvSedeDisplay.innerText = Estado.nombreSedeB;
+      else tvSedeDisplay.innerText = Estado.sede || '';
+    }
 
     // Activar sonido inicial para permisos de navegador (autoplay policy)
     // y forzar la carga de voces disponibles
@@ -263,13 +366,19 @@ const app = {
   async actualizarTV() {
     if (!Estado.online || !sb) return;
     try {
+      await this.obtenerInicioBrigada(); // Mantener fresca la fecha
+
       const { data, error } = await sb.from('pacientes_espera')
         .select('*')
         .in('estado', ['en_consulta', 'en_triaje'])
+        .eq('sede', Estado.sede)
         .gte('created_at', Estado.brigadaDesde)
         .order('id', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[TV] error:', error);
+        throw error;
+      }
 
       if (!data) return;
 
@@ -314,6 +423,16 @@ const app = {
               `;
             }
           }
+        } else {
+          const mainContent = document.getElementById('tvContent');
+          if (mainContent) {
+            mainContent.innerHTML = `
+              <div style="background: white; color: #dc2626; font-weight: 900; font-size: 3rem; padding: 1rem;">ESPERANDO LLAMADOS</div>
+              <div style="background: #dc2626; color: white; font-weight: 900; font-size: 5rem; padding: 1.5rem;">---</div>
+            `;
+          }
+          const historyContainer = document.getElementById('tvUltimosLlamados');
+          if (historyContainer) historyContainer.innerHTML = '';
         }
 
         this.tvPrimeraCargaHecha = true;
@@ -507,7 +626,7 @@ const app = {
       if (!loginOk) {
         try {
           const resp = await fetch(
-            `${SUPABASE_URL}/rest/v1/usuarios?select=username,password,role,area&limit=500`,
+            `${SUPABASE_URL}/rest/v1/usuarios?username=ilike.*${encodeURIComponent(user)}*&select=username,password,role,area,sede`,
             {
               headers: {
                 'apikey': SUPABASE_KEY,
@@ -517,62 +636,77 @@ const app = {
             }
           );
           const rows = await resp.json();
-          console.error('Fetch-tabla status:', resp.status, 'filas:', Array.isArray(rows) ? rows.length : JSON.stringify(rows));
+          console.error('Fetch-single status:', resp.status, 'filas:', Array.isArray(rows) ? rows.length : JSON.stringify(rows));
 
           if (Array.isArray(rows) && rows.length > 0) {
-            const match = rows.find(u =>
-              u.username?.toLowerCase() === user.toLowerCase() &&
-              u.password === pass
-            );
+            const match = rows.find(u => (u.username || '').trim().toLowerCase() === user.toLowerCase() && u.password === pass);
             if (match) {
               loginOk = true;
-              loginData = { success: true, role: match.role, username: match.username, area: match.area || null };
+              loginData = { success: true, role: match.role, username: match.username, area: match.area || null, sede: match.sede || null };
             } else {
-              const soloUser = rows.find(u => u.username?.toLowerCase() === user.toLowerCase());
+              const soloUser = rows.find(u => (u.username || '').trim().toLowerCase() === user.toLowerCase());
               if (soloUser) {
-                // ¡Usuario encontrado! Intentar con contraseña exacta de BD
                 throw new Error(`Pass incorrecta. BD tiene: "${soloUser.password}" — escribiste: "${pass}"`);
               } else {
                 throw new Error(`Usuario "${user}" no existe en la base de datos`);
               }
             }
-          } else if (!Array.isArray(rows)) {
-            // RLS está bloqueando — intentar leer solo este usuario
-            const resp2 = await fetch(
-              `${SUPABASE_URL}/rest/v1/usuarios?username=eq.${encodeURIComponent(user)}&select=username,password,role,area`,
-              {
-                headers: {
-                  'apikey': SUPABASE_KEY,
-                  'Authorization': `Bearer ${SUPABASE_KEY}`,
-                  'Accept': 'application/json'
-                }
-              }
-            );
-            const rows2 = await resp2.json();
-            console.error('Fetch-single status:', resp2.status, JSON.stringify(rows2));
-
-            if (Array.isArray(rows2) && rows2.length > 0 && rows2[0].password === pass) {
-              loginOk = true;
-              const m = rows2[0];
-              loginData = { success: true, role: m.role, username: m.username, area: m.area || null };
-            } else if (Array.isArray(rows2) && rows2.length > 0) {
-              throw new Error(`Pass incorrecta. BD tiene: "${rows2[0].password}"`);
-            } else {
-              throw new Error(`Tabla protegida por RLS — status ${resp2.status}: ${JSON.stringify(rows2).substring(0, 80)}`);
-            }
+          } else if (Array.isArray(rows) && rows.length === 0) {
+            throw new Error(`Usuario "${user}" no existe en la base de datos`);
           } else {
-            throw new Error('Tabla usuarios vacía o sin acceso (0 filas)');
+            throw new Error(`Error / RLS — status ${resp.status}: ${JSON.stringify(rows).substring(0, 80)}`);
           }
         } catch (e) {
-          if (e.message.startsWith('Pass') || e.message.startsWith('Usuario') || e.message.startsWith('Tabla')) throw e;
+          if (e.message.startsWith('Pass') || e.message.startsWith('Usuario') || e.message.startsWith('Error / RLS')) throw e;
           console.error('Fetch-ex:', e.message);
           throw new Error('Error de red: ' + e.message);
         }
       }
-
       if (!loginOk) throw new Error('No se pudo verificar credenciales');
 
+      // Intentar obtener la sede si el RPC no la devolvió (fallback para usuarios designados a una sede)
+      if (loginOk && !loginData.sede) {
+        try {
+          const respSede = await fetch(
+            `${SUPABASE_URL}/rest/v1/usuarios?username=eq.${encodeURIComponent(loginData.username)}&select=sede`,
+            { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Accept': 'application/json' } }
+          );
+          const rSede = await respSede.json();
+          if (Array.isArray(rSede) && rSede.length > 0 && rSede[0].sede) {
+            loginData.sede = rSede[0].sede;
+          }
+        } catch(e) { console.warn('No se pudo obtener sede del usuario:', e); }
+      }
+
       // ── Login exitoso ─────────────────────────────────────────────
+      const selectSede = document.getElementById('loginSede');
+      const sedeSeleccionada = selectSede ? selectSede.value.trim() : 'Sede A';
+
+      if (loginData.role !== 'admin') {
+        if (!loginData.sede) {
+          throw new Error('No se pudo verificar la sede de este usuario en la Base de Datos. Pide al Administrador que vuelva a asignarte una sede o verifica tu conexión.');
+        }
+
+        let dbSede = loginData.sede.trim();
+        // Normalizar en caso de que en la BD se haya guardado el alias en lugar del ID interno
+        if (Estado.nombreSedeA && dbSede.toLowerCase() === Estado.nombreSedeA.toLowerCase()) dbSede = 'Sede A';
+        if (Estado.nombreSedeB && dbSede.toLowerCase() === Estado.nombreSedeB.toLowerCase()) dbSede = 'Sede B';
+
+        if (dbSede !== sedeSeleccionada) {
+          let nombreSedeReal = dbSede;
+          if (dbSede === 'Sede A' && Estado.nombreSedeA) nombreSedeReal = Estado.nombreSedeA;
+          if (dbSede === 'Sede B' && Estado.nombreSedeB) nombreSedeReal = Estado.nombreSedeB;
+          
+          let nombreSedeIntento = sedeSeleccionada;
+          if (sedeSeleccionada === 'Sede A' && Estado.nombreSedeA) nombreSedeIntento = Estado.nombreSedeA;
+          if (sedeSeleccionada === 'Sede B' && Estado.nombreSedeB) nombreSedeIntento = Estado.nombreSedeB;
+
+          throw new Error(`Acceso denegado: El usuario no se encuentra registrado en ${nombreSedeIntento}. Pertenece a ${nombreSedeReal}.`);
+        }
+      }
+
+      Estado.sede = sedeSeleccionada;
+
       Estado.role = loginData.role;
       Estado.userName = loginData.username;
       Estado.areaId = loginData.area || null;
@@ -582,7 +716,8 @@ const app = {
         role: Estado.role,
         userName: Estado.userName,
         areaId: Estado.areaId,
-        adminPass: Estado.adminPass
+        adminPass: Estado.adminPass,
+        sede: Estado.sede
       }));
 
       this.restaurarVistaSegunRol();
@@ -590,10 +725,22 @@ const app = {
     } catch (e) {
       console.error('Login error final:', e.message);
       this.toast(e.message, 'error');
+      
+      // Si la animación está activa, la ocultamos y volvemos a mostrar el formulario
+      const loader = document.getElementById('medical-loader');
+      const stepLogin = document.getElementById('step-login');
+      if (loader) loader.style.display = 'none';
+      if (stepLogin) {
+        stepLogin.style.display = 'block';
+        stepLogin.style.opacity = '1';
+      }
     }
 
-    btn.disabled = false;
-    btn.innerText = originalText;
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = originalText;
+      btn.classList.remove('loading-animation');
+    }
   },
 
 
@@ -617,13 +764,13 @@ const app = {
     }
 
     try {
-      const { data, error } = await sb.from('pacientes_espera')
-        .select('nombre, celular, direccion')
-        .eq('cedula', cedula)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (error) throw error;
+      const fetchFn = window.__originalFetch || window.fetch;
+      const resp = await fetchFn(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=nombre,celular,direccion&cedula=eq.' + encodeURIComponent(cedula) + '&order=created_at.desc&limit=1',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+      );
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.message || 'Error en búsqueda');
 
       if (data && data.length > 0) {
         const p = data[0];
@@ -690,22 +837,27 @@ const app = {
       }
 
       if (Estado.online && sb) {
+        // ACTUALIZAR FECHA DE BRIGADA ANTES DE CALCULAR EL TURNO
+        await this.obtenerInicioBrigada();
+
         let estadoStr = esCitaProgramada ? 'programado' : (directoEspecialidad ? 'pendiente' : 'en_espera');
         let atendidoPor = directoEspecialidad ? 'Directo desde Recepción' : null;
 
         // Solo calcular número de turno si no es cita programada
         let numTurno = null;
         if (!esCitaProgramada) {
-          const { data: maxData } = await sb.from('pacientes_espera')
-            .select('numero_turno_area')
-            .eq('especialidad', especialidad)
-            .not('numero_turno_area', 'is', null)
-            .gte('created_at', Estado.brigadaDesde)
-            .order('numero_turno_area', { ascending: false })
-            .limit(1);
+          // Buscar turno máximo SOLO dentro de la brigada actual Y de la misma sede
+          const maxResp = await window.__originalFetch(
+            SUPABASE_URL + '/rest/v1/pacientes_espera?select=numero_turno_area&especialidad=eq.' + encodeURIComponent(especialidad) +
+            '&numero_turno_area=not.is.null&sede=eq.' + encodeURIComponent(Estado.sede) +
+            '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+            '&order=numero_turno_area.desc&limit=1',
+            { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+          );
+          const maxData = await maxResp.json();
 
           numTurno = 1;
-          if (maxData && maxData.length > 0 && maxData[0].numero_turno_area) {
+          if (Array.isArray(maxData) && maxData.length > 0 && maxData[0].numero_turno_area) {
             numTurno = maxData[0].numero_turno_area + 1;
           }
         }
@@ -723,15 +875,32 @@ const app = {
           numero_turno_area: numTurno,
           creado_por: Estado.userName,
           atendido_por: atendidoPor,
-          estado: estadoStr
+          estado: estadoStr,
+          sede: Estado.sede
         };
 
         if (esCitaProgramada && fechaCita) {
           insertObj.fecha_cita = new Date(fechaCita).toISOString();
         }
 
-        const { error } = await sb.from('pacientes_espera').insert(insertObj);
-        if (error) throw error;
+        // Insertar directamente con __originalFetch para garantizar que la sede quede guardada
+        const insertResp = await window.__originalFetch(
+          SUPABASE_URL + '/rest/v1/pacientes_espera',
+          {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': 'Bearer ' + SUPABASE_KEY,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify(insertObj)
+          }
+        );
+        if (!insertResp.ok) {
+          const errBody = await insertResp.json().catch(() => ({}));
+          throw new Error('Error al guardar: ' + (errBody.message || insertResp.status));
+        }
       }
 
       const etiqueta = motivoExtra ? `${seleccion} → ${especialidad}` : especialidad;
@@ -810,13 +979,20 @@ const app = {
     if (!Estado.online || !sb) return;
 
     try {
-      const { data, error } = await sb.from('pacientes_espera')
-        .select('nombre, cedula, estado, especialidad, numero_turno_area, creado_por')
-        .eq('creado_por', Estado.userName)
-        .gte('created_at', Estado.brigadaDesde)
-        .order('created_at', { ascending: false })
-        .limit(15);
-      if (error) throw error;
+      await this.obtenerInicioBrigada(); // Siempre refrescar brigada antes de cargar
+      console.log('[Historial] Cargando... sede:', Estado.sede, 'desde:', Estado.brigadaDesde);
+      const histResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera' +
+        '?select=nombre,cedula,estado,especialidad,numero_turno_area,creado_por' +
+        '&creado_por=eq.' + encodeURIComponent(Estado.userName) +
+        '&sede=eq.' + encodeURIComponent(Estado.sede) +
+        '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+        '&order=created_at.desc&limit=20',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' }, cache: 'no-store' }
+      );
+      const data = await histResp.json();
+      console.log('[Historial] Resultado:', Array.isArray(data) ? data.length : data, 'registros');
+      if (!histResp.ok) throw new Error(data.message || 'Error al cargar historial');
 
       lista.innerHTML = '';
       if (!data || data.length === 0) {
@@ -860,6 +1036,7 @@ const app = {
     try {
       const { data, error } = await sb.from('pacientes_espera')
         .select('*')
+        .eq('sede', Estado.sede)
         .eq('estado', 'programado')
         .gte('created_at', Estado.brigadaDesde)
         .order('fecha_cita', { ascending: true });
@@ -993,13 +1170,20 @@ const app = {
     }
 
     try {
-      // La enfermera ve TODOS los que están "en_espera" o "en_triaje" de la BRIGADA ACTIVA
-      const { data, error } = await sb.from('pacientes_espera')
-        .select('*')
-        .in('estado', ['en_espera', 'en_triaje'])
-        .gte('created_at', Estado.brigadaDesde)
-        .order('created_at', { ascending: true });
-      if (error) throw error;
+      // Pacientes "en_espera" o "en_triaje" de la brigada activa y sede
+      await this.obtenerInicioBrigada();
+      console.log('[Triaje] Cargando... sede:', Estado.sede, 'desde:', Estado.brigadaDesde);
+      const triajeResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=*' +
+        '&estado=in.(en_espera,en_triaje)' +
+        '&sede=eq.' + encodeURIComponent(Estado.sede) +
+        '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+        '&order=created_at.asc',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' }, cache: 'no-store' }
+      );
+      const data = await triajeResp.json();
+      console.log('[Triaje] Resultado:', Array.isArray(data) ? data.length : data, 'registros');
+      const error = triajeResp.ok ? null : data;
 
       const numEl = document.getElementById('currentTriajeNumber');
       const nameEl = document.getElementById('currentTriajeName');
@@ -1116,10 +1300,19 @@ const app = {
 
     // Marcar inmediatamente como en_triaje para que aparezca en "Estado de Turnos"
     if (Estado.online && sb) {
-      await sb.from('pacientes_espera')
-        .update({ estado: 'en_triaje' })
-        .eq('id', pacienteId)
-        .neq('estado', 'en_triaje'); // Solo si no está ya en triaje
+      await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?id=eq.' + encodeURIComponent(pacienteId) + '&estado=neq.en_triaje',
+        {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({ estado: 'en_triaje', sede: Estado.sede })
+        }
+      ).catch(e => console.error('Error marcando en_triaje:', e));
     }
   },
 
@@ -1158,31 +1351,47 @@ const app = {
 
       if (!numTurno) {
         // Calcular el siguiente número de turno para esa especialidad si es un paciente antiguo
-        const { data: maxData } = await sb.from('pacientes_espera')
-          .select('numero_turno_area')
-          .eq('especialidad', especialidad)
-          .gte('created_at', Estado.brigadaDesde)
-          .not('numero_turno_area', 'is', null)
-          .order('numero_turno_area', { ascending: false })
-          .limit(1);
+        const maxTriajeResp = await window.__originalFetch(
+          SUPABASE_URL + '/rest/v1/pacientes_espera?select=numero_turno_area' +
+          '&especialidad=eq.' + encodeURIComponent(especialidad) +
+          '&sede=eq.' + encodeURIComponent(Estado.sede) +
+          '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+          '&numero_turno_area=not.is.null' +
+          '&order=numero_turno_area.desc&limit=1',
+          { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+        );
+        const maxDataTriaje = await maxTriajeResp.json();
 
         numTurno = 1;
-        if (maxData && maxData.length > 0 && maxData[0].numero_turno_area) {
-          numTurno = maxData[0].numero_turno_area + 1;
+        if (Array.isArray(maxDataTriaje) && maxDataTriaje.length > 0 && maxDataTriaje[0].numero_turno_area) {
+          numTurno = maxDataTriaje[0].numero_turno_area + 1;
         }
       }
 
-      // Actualizar el registro con signos vitales y estado
-      const { error } = await sb.from('pacientes_espera')
-        .update({
-          numero_turno_area: numTurno,
-          estado: 'pendiente',
-          atendido_por: Estado.userName,
-          signos_vitales: JSON.stringify(signosVitales)
-        })
-        .eq('id', pacienteId);
-
-      if (error) throw error;
+      // Actualizar el registro con signos vitales y estado usando fetch directo
+      const updateResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?id=eq.' + encodeURIComponent(pacienteId),
+        {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({
+            numero_turno_area: numTurno,
+            estado: 'pendiente',
+            atendido_por: Estado.userName,
+            signos_vitales: JSON.stringify(signosVitales),
+            sede: Estado.sede
+          })
+        }
+      );
+      if (!updateResp.ok) {
+        const errBody = await updateResp.json().catch(() => ({}));
+        throw new Error('Error al actualizar: ' + (errBody.message || updateResp.status));
+      }
 
       const prefijo = especialidad.substring(0, 3).toUpperCase();
       this.toast(`Turno ${prefijo}-${numTurno} asignado → ${especialidad}`, 'success');
@@ -1213,14 +1422,21 @@ const app = {
     if (!Estado.online || !sb) return;
 
     try {
-      const { data: turnos, error } = await sb.from('pacientes_espera')
-        .select('*')
-        .eq('especialidad', Estado.areaId)
-        .in('estado', ['en_espera', 'pendiente', 'en_consulta'])
-        .gte('created_at', Estado.brigadaDesde)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
+      // Pacientes de esta especialidad, misma sede, brigada activa
+      await this.obtenerInicioBrigada();
+      console.log('[Area] Cargando... sede:', Estado.sede, 'area:', Estado.areaId, 'desde:', Estado.brigadaDesde);
+      const areaResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=*' +
+        '&especialidad=eq.' + encodeURIComponent(Estado.areaId) +
+        '&estado=in.(en_espera,pendiente,en_consulta)' +
+        '&sede=eq.' + encodeURIComponent(Estado.sede) +
+        '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+        '&order=created_at.asc',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' }, cache: 'no-store' }
+      );
+      const turnos = await areaResp.json();
+      console.log('[Area] Resultado:', Array.isArray(turnos) ? turnos.length : turnos, 'pacientes');
+      const error = areaResp.ok ? null : turnos;
       Estado.turnosArea = turnos; // Guardar localmente para abrir la consulta
 
       const numEl = document.getElementById('currentPatientNumber');
@@ -2008,7 +2224,8 @@ const app = {
 
     try {
       let queryBase = sb.from('pacientes_espera').select('*')
-        .neq('nombre', '[SISTEMA_NUEVA_BRIGADA]');
+        .eq('sede', Estado.sede)
+        .neq('nombre', '[SISTEMA_NUEVA_BRIGADA_' + Estado.sede + ']');
 
       if (periodoSel === 'actual') {
         queryBase = queryBase.gte('created_at', Estado.brigadaDesde);
@@ -2159,13 +2376,16 @@ const app = {
     try {
       if (!Estado.online || !sb) throw new Error('Sin conexión a Base de Datos');
 
-      // Buscar por cédula o nombre (ilike)
-      const { data, error } = await sb.from('pacientes_espera')
-        .select('*')
-        .or(`cedula.ilike.%${termino}%,nombre.ilike.%${termino}%`)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
+      // Búsqueda global: se limpia la sede temporalmente para que el interceptor no filtre
+      const termLimpio = termino.replace(/[,()]/g, ' ');
+      const backupSede = Estado.sede;
+      const fetchFn = window.__originalFetch || window.fetch;
+      const resp = await fetchFn(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=*&or=(cedula.ilike.%25' + encodeURIComponent(termLimpio) + '%25,nombre.ilike.%25' + encodeURIComponent(termLimpio) + '%25)&order=created_at.desc',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+      );
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.message || 'Error en búsqueda de historia clínica');
 
       this.renderizarHistoriaClinica(data, termino);
 
@@ -2485,7 +2705,29 @@ const app = {
 
       listEl.innerHTML = '';
       const usuarios = data.data || [];
-      if (usuarios.length === 0) {
+      
+      // Intentar recuperar la sede de todos los usuarios (ya que el RPC antiguo no la devuelve)
+      try {
+        const resp = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?select=username,sede`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        const rows = await resp.json();
+        if (Array.isArray(rows)) {
+          usuarios.forEach(u => {
+            const match = rows.find(r => r.username === u.username);
+            if (match && match.sede) u.sede = match.sede;
+          });
+        }
+      } catch(e) { console.warn('No se pudieron obtener las sedes', e); }
+      
+      // Mostrar TODOS los usuarios, indicando la sede a la que pertenece cada uno
+      usuarios.forEach(u => { if (u.role !== 'admin' && !u.sede) u.sede = 'Sede A'; });
+      const nombreSede = s => s === 'Sede A' ? (Estado.nombreSedeA || 'Sede A') : (s === 'Sede B' ? (Estado.nombreSedeB || 'Sede B') : s);
+      const usuariosFiltrados = usuarios.slice().sort((a, b) =>
+        (a.role === 'admin' ? '' : (a.sede || '')).localeCompare(b.role === 'admin' ? '' : (b.sede || '')) ||
+        a.username.localeCompare(b.username));
+
+      if (usuariosFiltrados.length === 0) {
         listEl.innerHTML = `
           <li>
             <div class="state-empty">
@@ -2496,7 +2738,7 @@ const app = {
         return;
       }
 
-      usuarios.forEach(u => {
+      usuariosFiltrados.forEach(u => {
         const roleClass = u.role === 'admin' ? 'admin' : (u.role === 'doctor' ? 'doctor' : (u.role === 'enfermera' ? 'enfermera' : 'turnero'));
         listEl.innerHTML += `
           <li class="admin-user-item">
@@ -2505,6 +2747,7 @@ const app = {
               <div class="admin-user-meta">
                 <span class="role-badge ${roleClass}">${u.role.toUpperCase()}</span>
                 ${u.area ? `<span class="area-tag">🏥 ${u.area}</span>` : ''}
+                ${u.role === 'admin' ? `<span class="area-tag" style="background:#e0e7ff;color:#4f46e5;">📍 Todas las sedes</span>` : `<span class="area-tag" style="background:#e0e7ff;color:#4f46e5;">📍 ${nombreSede(u.sede)}</span>`}
               </div>
             </div>
             ${u.username !== Estado.userName
@@ -2518,11 +2761,37 @@ const app = {
     }
   },
 
+  async cambiarSedeAdmin(nuevaSede) {
+    Estado.sede = nuevaSede;
+    const sesionInfo = localStorage.getItem('turnero_session');
+    if (sesionInfo) {
+      const parsed = JSON.parse(sesionInfo);
+      parsed.sede = nuevaSede;
+      localStorage.setItem('turnero_session', JSON.stringify(parsed));
+    }
+    
+    // Obtener el inicio de brigada de esta nueva sede
+    await this.obtenerInicioBrigada();
+    this._actualizarInfoBrigada();
+    
+    // Si la vista actual es Dashboard, refrescarla
+    const vistaDash = document.getElementById('view-dashboard');
+    if (vistaDash && vistaDash.classList.contains('active')) {
+      this.generarDashboard();
+    }
+    
+    // Refrescar la lista de usuarios para mostrar solo los de la sede actual
+    this.adminCargarUsuarios();
+    
+    this.toast('Sede cambiada a: ' + nuevaSede, 'info');
+  },
+
   async adminCrearUsuario() {
     const username = (document.getElementById('adminNewUser').value || '').trim();
     const pass = (document.getElementById('adminNewPass').value || '').trim();
     const role = document.getElementById('adminNewRole').value;
     const area = (document.getElementById('adminNewArea').value || '').trim();
+    const sede = (document.getElementById('adminNewSede').value || 'Sede A');
 
     if (!username || !pass) {
       this.toast('Por favor completa usuario y contraseña', 'error');
@@ -2546,7 +2815,15 @@ const app = {
       if (error) throw error;
       if (!data.success) throw new Error(data.message);
 
-      this.toast(`Usuario @${username} creado exitosamente`, 'success');
+      // Guardar la sede designada (y verificar que realmente se guardó)
+      const { data: upd, error: updErr } = await sb.from('usuarios')
+        .update({ sede: sede }).eq('username', username).select('username,sede');
+      if (updErr) throw updErr;
+      if (!upd || upd.length === 0 || upd[0].sede !== sede) {
+        throw new Error('El usuario se creó pero no se pudo asignar la sede. Revisa los permisos de la tabla usuarios.');
+      }
+
+      this.toast(`Usuario @${username} creado y asignado a ${sede}`, 'success');
       document.getElementById('adminNewUser').value = '';
       document.getElementById('adminNewPass').value = '';
       if (role === 'doctor') document.getElementById('adminNewArea').value = '';
@@ -2660,17 +2937,32 @@ const app = {
     }
 
     try {
-      // Insertar registro fantasma para marcar el inicio exacto en el tiempo de la BD
-      const { data, error } = await sb.from('pacientes_espera').insert({
-        nombre: '[SISTEMA_NUEVA_BRIGADA]',
-        estado: 'atendido',
-        creado_por: Estado.userName
-      }).select('created_at').single();
+      // Insertar registro fantasma directamente (sin monkey patch) para marcar inicio de brigada
+      const insertResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera',
+        {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify({
+            nombre: '[SISTEMA_NUEVA_BRIGADA_' + Estado.sede + ']',
+            estado: 'atendido',
+            creado_por: Estado.userName,
+            sede: Estado.sede
+          })
+        }
+      );
+      const insertData = await insertResp.json();
+      if (!insertResp.ok) throw new Error(JSON.stringify(insertData));
 
-      if (error) throw error;
+      const created_at = Array.isArray(insertData) ? insertData[0].created_at : insertData.created_at;
 
-      Estado.brigadaDesde = data.created_at;
-      localStorage.setItem('brigada_activa_desde', data.created_at);
+      Estado.brigadaDesde = created_at;
+      localStorage.setItem('brigada_activa_desde_' + Estado.sede, created_at);
 
       // Cerrar modal
       const modal = document.getElementById('modalNuevaBrigada');
@@ -2681,7 +2973,7 @@ const app = {
       this.adminCargarUsuarios();
 
       // Notificación de éxito
-      this.toast('🚀 ¡Nueva brigada iniciada! El sistema está limpio y listo.', 'success');
+      this.toast('🚀 ¡Nueva brigada iniciada! Turnos empezarán desde 1.', 'success');
       setTimeout(() => this.toast('📂 Los datos anteriores están guardados en Historia Clínica.', 'success'), 1500);
     } catch (e) {
       console.error(e);
@@ -2692,11 +2984,13 @@ const app = {
   _actualizarInfoBrigada() {
     const el = document.getElementById('brigadaInfoLabel');
     if (!el || !Estado.brigadaDesde) return;
-    const fecha = new Date(Estado.brigadaDesde);
-    const esInicial = fecha.getFullYear() === 2000;
-    if (esInicial) {
-      el.innerHTML = `<span style="color: #64748b;">📋 Brigada: <strong>Todos los registros</strong></span>`;
+    
+    // Si la fecha es la por defecto (año 2000 en UTC), la ocultamos de la interfaz
+    if (Estado.brigadaDesde.startsWith('2000-01-01')) {
+      el.style.display = 'none';
     } else {
+      el.style.display = 'block';
+      const fecha = new Date(Estado.brigadaDesde);
       const fechaStr = fecha.toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' });
       el.innerHTML = `<span style="color: #059669;">🚀 Brigada activa desde: <strong>${fechaStr}</strong></span>`;
     }
@@ -2720,6 +3014,7 @@ const app = {
       while (hasMore) {
         const { data, error } = await sb.from('pacientes_espera')
           .select('*')
+          .eq('sede', Estado.sede)
           .gte('created_at', Estado.brigadaDesde || '2000-01-01T00:00:00.000Z')
           .range(fromRow, fromRow + step - 1);
 
@@ -2832,6 +3127,7 @@ const app = {
     try {
       const { data, error } = await sb.from('pacientes_espera')
         .select('nombre, especialidad, estado, numero_turno_area, atendido_por, signos_vitales')
+        .eq('sede', Estado.sede)
         .gte('created_at', Estado.brigadaDesde)
         .order('numero_turno_area', { ascending: false });
         
@@ -3017,29 +3313,31 @@ const app = {
     document.getElementById('historiaClinicaLoading').style.display = 'block';
 
     try {
-      // Buscar por cédula exacta primero, luego por nombre parcial
-      let { data, error } = await sb.from('pacientes_espera')
-        .select('*')
-        .eq('cedula', query)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
+      const fetchFn = window.__originalFetch || window.fetch;
+      
+      // Intentar buscar por cédula
+      let resp = await fetchFn(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=*&cedula=eq.' + encodeURIComponent(query) + '&order=created_at.desc',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+      );
+      let data = await resp.json();
+      if (!resp.ok) throw new Error(data.message || 'Error en búsqueda por cédula');
 
       // Si no hay resultado por cédula, buscar por nombre
       if (!data || data.length === 0) {
-        const resp = await sb.from('pacientes_espera')
-          .select('*')
-          .ilike('nombre', `%${query}%`)
-          .order('created_at', { ascending: false })
-          .limit(50);
-        if (resp.error) throw resp.error;
-        data = resp.data;
+        resp = await fetchFn(
+          SUPABASE_URL + '/rest/v1/pacientes_espera?select=*&nombre=ilike.*' + encodeURIComponent(query) + '*&order=created_at.desc&limit=50',
+          { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+        );
+        data = await resp.json();
+        if (!resp.ok) throw new Error(data.message || 'Error en búsqueda por nombre');
       }
 
       document.getElementById('historiaClinicaLoading').style.display = 'none';
       this.renderizarHistoriaClinica(data || [], query);
 
     } catch (e) {
+      Estado.sede = backupSede;
       console.error(e);
       document.getElementById('historiaClinicaLoading').style.display = 'none';
       document.getElementById('historiaClinicaEmpty').style.display = 'block';
@@ -3178,6 +3476,8 @@ const app = {
     }
 
     const config = {
+      nombre_sede_a: document.getElementById('dpNombreSedeA') ? document.getElementById('dpNombreSedeA').value : 'Sede A',
+      nombre_sede_b: document.getElementById('dpNombreSedeB') ? document.getElementById('dpNombreSedeB').value : 'Sede B',
       razon_social: document.getElementById('dpRazonSocial').value,
       ruc: document.getElementById('dpRuc').value,
       telefono: document.getElementById('dpTelefono').value,
@@ -3245,6 +3545,15 @@ const app = {
 
       if (data && data.length > 0) {
         const config = data[0];
+        
+        Estado.nombreSedeA = config.nombre_sede_a || 'Sede A';
+        Estado.nombreSedeB = config.nombre_sede_b || 'Sede B';
+        
+        if (document.getElementById('dpNombreSedeA')) document.getElementById('dpNombreSedeA').value = Estado.nombreSedeA;
+        if (document.getElementById('dpNombreSedeB')) document.getElementById('dpNombreSedeB').value = Estado.nombreSedeB;
+
+        this.actualizarNombresSedesUI();
+
         document.getElementById('dpRazonSocial').value = config.razon_social || '';
         document.getElementById('dpRuc').value = config.ruc || '';
         document.getElementById('dpTelefono').value = config.telefono || '';
@@ -3279,6 +3588,26 @@ const app = {
     }
     
     this.actualizarHistorialDP();
+  },
+
+  actualizarNombresSedesUI() {
+    const selects = ['loginSede', 'adminNewSede', 'adminSedeSelector'];
+    selects.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        Array.from(el.options).forEach(opt => {
+          if (opt.value === 'Sede A') opt.text = Estado.nombreSedeA;
+          if (opt.value === 'Sede B') opt.text = Estado.nombreSedeB;
+        });
+      }
+    });
+
+    const tvSedeDisplay = document.getElementById('tvSedeDisplay');
+    if (tvSedeDisplay && Estado.sede) {
+      if (Estado.sede === 'Sede A') tvSedeDisplay.innerText = Estado.nombreSedeA;
+      else if (Estado.sede === 'Sede B') tvSedeDisplay.innerText = Estado.nombreSedeB;
+      else tvSedeDisplay.innerText = Estado.sede;
+    }
   },
 
   async actualizarHistorialDP() {

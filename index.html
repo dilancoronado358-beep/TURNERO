@@ -16,7 +16,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
   <!-- Estilos -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 
 <body>
@@ -24,85 +24,105 @@
   <!-- =====================================================
        MODAL DE LOGIN
        ===================================================== -->
-  <div id="overlay" class="login-page">
-    <div class="abstract-waves"></div>
-    <div class="modal circular-login">
-      <div style="text-align: center; margin-bottom: 2rem;">
-        <img
-          src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png"
-          alt="Logo Renovación Montufareña"
-          style="max-height: 80px; width: auto; object-fit: contain; filter: brightness(0) invert(1) drop-shadow(0 2px 4px rgba(0,0,0,0.6));">
-      </div>
-
-      <!-- MEDICAL LOADER (Oculto por defecto) -->
-      <div id="medical-loader"
-        style="display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 200px;">
-        <svg width="150" height="60" viewBox="0 0 150 60" class="ekg-svg">
-          <path class="ekg-line" d="M 0,30 L 40,30 L 50,10 L 65,50 L 80,30 L 150,30" fill="none" stroke="#10b981"
-            stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <p
-          style="color: #10b981; margin-top: 1.5rem; font-weight: 500; font-size: 1.1rem; letter-spacing: 2px; animation: pulse-text 1.5s infinite alternate;">
-          Cargando Sistema...</p>
-      </div>
-
-      <!-- FORMULARIO DE LOGIN -->
-      <div id="step-login" class="login-step active">
-        <div class="form-group-login">
-          <input type="text" id="loginUsername" placeholder="Usuario" autocomplete="off"
-            onkeypress="if(event.key === 'Enter') document.getElementById('loginPassword').focus()">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="login-icon">
-            <path fill-rule="evenodd"
-              d="M7.5 6a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.751 20.105a8.25 8.25 0 0 1 16.498 0 .75.75 0 0 1-.437.695A18.683 18.683 0 0 1 12 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 0 1-.437-.695Z"
-              clip-rule="evenodd" />
-          </svg>
+  <div id="overlay" class="login-page" style="display: flex; flex-direction: row; width: 100vw; height: 100vh; background: #ffffff; margin: 0; padding: 0;">
+    <!-- LEFT PANEL: Blue Branding -->
+    <div style="flex: 0 0 55%; background: linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%); color: white; display: flex; flex-direction: column; justify-content: center; padding: 5rem; position: relative; overflow: hidden;">
+      <!-- Subtle Background Lines (similar to SaleSkip) -->
+      <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; opacity: 0.1; background-image: repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(255,255,255,1) 40px, rgba(255,255,255,1) 41px); pointer-events: none;"></div>
+      
+      <div style="position: relative; z-index: 10; max-width: 600px;">
+        <div style="margin-bottom: 2rem;">
+          <img src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png" alt="Logo" style="max-height: 80px; filter: brightness(0) invert(1);">
         </div>
-        <div class="form-group-login">
-          <input type="password" id="loginPassword" placeholder="••••••••" style="padding-left: 3rem;"
-            onkeypress="if(event.key === 'Enter') document.getElementById('btnIngresar').click()">
-          <!-- Candado a la izquierda -->
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="login-icon"
-            style="left: 1.2rem; right: auto;">
-            <path fill-rule="evenodd"
-              d="M12 1.5a5.25 5.25 0 0 0-5.25 5.25v3a3 3 0 0 0-3 3v6.75a3 3 0 0 0 3 3h10.5a3 3 0 0 0 3-3v-6.75a3 3 0 0 0-3-3v-3c0-2.9-2.35-5.25-5.25-5.25Zm3.75 8.25v-3a3.75 3.75 0 1 0-7.5 0v3h7.5Z"
-              clip-rule="evenodd" />
-          </svg>
-          <!-- Ojo a la derecha para ver contraseña -->
-          <svg id="eyeIcon" onclick="togglePassword()" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-            fill="currentColor" class="login-icon" style="cursor: pointer; pointer-events: auto;">
-            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-            <path fill-rule="evenodd"
-              d="M1.323 11.447C2.811 6.976 7.028 3.75 12.001 3.75c4.97 0 9.185 3.223 10.675 7.69.12.362.12.752 0 1.113-1.487 4.471-5.705 7.697-10.677 7.697-4.97 0-9.186-3.223-10.675-7.69a1.762 1.762 0 0 1 0-1.113ZM17.25 12a5.25 5.25 0 1 1-10.5 0 5.25 5.25 0 0 1 10.5 0Z"
-              clip-rule="evenodd" />
-          </svg>
+        <h1 style="font-size: 4.5rem; font-weight: 800; line-height: 1.1; margin-bottom: 1.5rem; letter-spacing: -0.02em;">
+          Hola<br>Renovación! 👋
+        </h1>
+        <p style="font-size: 1.25rem; line-height: 1.6; opacity: 0.9; margin-bottom: 3rem;">
+          Brindando atención médica digna y eficiente para nuestra comunidad. Cuidamos de la salud y el bienestar de cada paciente con vocación de servicio.
+        </p>
+      </div>
+      
+      <div style="position: absolute; bottom: 2rem; left: 5rem; font-size: 0.9rem; opacity: 0.7; z-index: 10;">
+        © 2026 Renovación Montufareña. Todos los derechos reservados.
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL: Login Form -->
+    <div style="flex: 0 0 45%; background: #ffffff; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 3rem; position: relative; box-shadow: -20px 0 40px rgba(0,0,0,0.05);">
+      <div class="circular-login" style="width: 100%; max-width: 420px; box-shadow: none !important; border: none !important; background: transparent !important; padding: 0 !important;">
+        
+        <div style="margin-bottom: 2rem;">
+          <h2 style="font-size: 2rem; font-weight: 800; color: #1e293b; margin-bottom: 0.5rem;">¡Bienvenido!</h2>
+          <p style="color: #64748b; font-size: 0.95rem;">Por favor, ingresa tus credenciales para continuar.</p>
         </div>
 
-        <button id="btnIngresar" class="login-btn-glass" onclick="iniciarAnimacionMedica()">
-          INGRESAR
-        </button>
+        <!-- MEDICAL LOADER (Oculto por defecto) -->
+        <div id="medical-loader"
+          style="display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 200px;">
+          <svg width="150" height="60" viewBox="0 0 150 60" class="ekg-svg">
+            <path class="ekg-line" d="M 0,30 L 40,30 L 50,10 L 65,50 L 80,30 L 150,30" fill="none" stroke="#10b981"
+              stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <p
+            style="color: #10b981; margin-top: 1.5rem; font-weight: 500; font-size: 1.1rem; letter-spacing: 2px; animation: pulse-text 1.5s infinite alternate;">
+            Cargando Sistema...</p>
+        </div>
 
-        <div class="login-footer-links"
-          style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-top: 1rem;">
-          <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem;">
-            <label class="login-link" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
-              <input type="checkbox" id="chkRecordarme" style="width: auto; margin: 0; padding: 0; cursor: pointer;">
-              Recordarme
-            </label>
-            <label class="login-link" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
-              <input type="checkbox" id="chkTerminos" style="width: auto; margin: 0; padding: 0; cursor: pointer;"> 
-              <span>Acepto los <a href="#" onclick="mostrarModalTexto('modal-terminos'); return false;"
-                style="color: #10b981; text-decoration: underline;">Términos y Condiciones</a></span>
-            </label>
-            <label class="login-link" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
-              <input type="checkbox" id="chkPrivacidad" style="width: auto; margin: 0; padding: 0; cursor: pointer;">
-              <span>Acepto la <a href="#" onclick="mostrarModalTexto('modal-privacidad'); return false;"
-                style="color: #10b981; text-decoration: underline;">Política de Privacidad</a></span>
-            </label>
+        <!-- FORMULARIO DE LOGIN -->
+        <div id="step-login" class="login-step active">
+          
+          <div class="form-group-login">
+            <select id="loginSede" style="padding-left: 0; font-weight: 600; cursor: pointer; appearance: none; -webkit-appearance: none; border: none; border-bottom: 2px solid #e2e8f0; border-radius: 0; padding-bottom: 0.5rem;">
+              <option value="Sede A">Sede A</option>
+              <option value="Sede B">Sede B</option>
+            </select>
           </div>
-        </div>
 
-        <div style="text-align: center; margin-top: 1rem;">
-          <button class="btn-tv-link" onclick="app.abrirModoTV()">📺 Abrir Pantalla Pública (TV)</button>
+          <div class="form-group-login" style="margin-top: 1.5rem;">
+            <input type="text" id="loginUsername" placeholder="Usuario o Email" autocomplete="off"
+              onkeypress="if(event.key === 'Enter') document.getElementById('loginPassword').focus()"
+              style="border: none; border-bottom: 2px solid #e2e8f0; border-radius: 0; padding-left: 0; padding-bottom: 0.5rem; background: transparent;">
+          </div>
+          
+          <div class="form-group-login" style="margin-top: 1.5rem;">
+            <input type="password" id="loginPassword" placeholder="Contraseña"
+              onkeypress="if(event.key === 'Enter') document.getElementById('btnIngresar').click()"
+              style="border: none; border-bottom: 2px solid #e2e8f0; border-radius: 0; padding-left: 0; padding-bottom: 0.5rem; background: transparent;">
+            <!-- Ojo a la derecha para ver contraseña -->
+            <svg id="eyeIcon" onclick="togglePassword()" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+              fill="currentColor" class="login-icon" style="cursor: pointer; pointer-events: auto; right: 0;">
+              <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+              <path fill-rule="evenodd"
+                d="M1.323 11.447C2.811 6.976 7.028 3.75 12.001 3.75c4.97 0 9.185 3.223 10.675 7.69.12.362.12.752 0 1.113-1.487 4.471-5.705 7.697-10.677 7.697-4.97 0-9.186-3.223-10.675-7.69a1.762 1.762 0 0 1 0-1.113ZM17.25 12a5.25 5.25 0 1 1-10.5 0 5.25 5.25 0 0 1 10.5 0Z"
+                clip-rule="evenodd" />
+            </svg>
+          </div>
+
+          <button id="btnIngresar" class="login-btn-glass" onclick="iniciarAnimacionMedica()" style="background: #111827; margin-top: 2rem; border-radius: 8px;">
+            Ingresar Ahora
+          </button>
+
+          <div class="login-footer-links" style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+            <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem;">
+              <label class="login-link" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
+                <input type="checkbox" id="chkRecordarme" style="width: auto; margin: 0; padding: 0; cursor: pointer;">
+                Recordarme
+              </label>
+              <label class="login-link" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
+                <input type="checkbox" id="chkTerminos" style="width: auto; margin: 0; padding: 0; cursor: pointer;">
+                <span>Acepto los <a href="#" onclick="mostrarModalTexto('modal-terminos'); return false;" style="color: var(--primary); text-decoration: underline;">Términos y Condiciones</a></span>
+              </label>
+              <label class="login-link" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
+                <input type="checkbox" id="chkPrivacidad" style="width: auto; margin: 0; padding: 0; cursor: pointer;">
+                <span>Acepto la <a href="#" onclick="mostrarModalTexto('modal-privacidad'); return false;" style="color: var(--primary); text-decoration: underline;">Política de Privacidad</a></span>
+              </label>
+            </div>
+          </div>
+
+          <div style="text-align: center; margin-top: 2rem;">
+            <button class="btn-tv-link" onclick="app.abrirModoTV()" style="color: #64748b; font-weight: 600; text-decoration: underline;">Abrir Pantalla Pública (TV)</button>
+          </div>
+          
         </div>
       </div>
     </div>
@@ -240,7 +260,7 @@
       localStorage.setItem('aceptadoTerminos', 'true');
       localStorage.setItem('aceptadoPrivacidad', 'true');
       localStorage.setItem('recordarme', document.getElementById('chkRecordarme').checked);
-      
+
       const usuarioInput = document.getElementById('loginUsername').value;
       const versionAct = localStorage.getItem('dp_version') || '1.0';
       const evidencia = {
@@ -251,10 +271,10 @@
         version_terminos: '1.0',
         estado_aceptacion: 'Aceptado explícitamente'
       };
-      
+
       // Intentar guardar en Supabase si está disponible
       if (typeof sb !== 'undefined' && sb) {
-        sb.from('evidencias_aceptacion').insert([evidencia]).then(({error}) => {
+        sb.from('evidencias_aceptacion').insert([evidencia]).then(({ error }) => {
           if (error) console.error('Error guardando evidencia en DB:', error);
         });
       } else {
@@ -312,10 +332,14 @@
         alt="Logo Renovación Montufareña">
       <h1>Sistema de Turnos</h1>
     </div>
+    <div style="display:flex; align-items:center;">
+      <button class="theme-toggle" id="themeToggle" onclick="toggleTema()" title="Modo oscuro / claro"
+        aria-label="Cambiar tema">🌙</button>
     <div class="user-info" id="userInfoDisplay">
       <span id="roleBadge"></span>
       <strong id="displayUserName"></strong>
       <button class="logout-btn" onclick="salirYRestaurar()">Salir</button>
+    </div>
     </div>
   </header>
 
@@ -327,7 +351,8 @@
       <button class="nav-item active" id="navBtnPrincipal" onclick="app.restaurarVistaSegunRol()">🏠 Panel
         Principal</button>
       <button class="nav-item" id="navBtnHistoria" onclick="app.abrirHistoriaClinica()">📖 Historia Clínica</button>
-      <button class="nav-item" id="navBtnEstadoTurnos" onclick="app.abrirEstadoTurnos()" style="display: none;">👀 Estado Turnos</button>
+      <button class="nav-item" id="navBtnEstadoTurnos" onclick="app.abrirEstadoTurnos()" style="display: none;">👀
+        Estado Turnos</button>
       <button class="nav-item" id="navBtnDashboard" onclick="app.abrirDashboard()" style="display: none;">📊
         Dashboard</button>
     </div>
@@ -341,63 +366,85 @@
     <!-- VISTA: Pantalla Pública (TV) -->
     <div id="view-tv" class="view"
       style="position: fixed; inset: 0; z-index: 9999; background: #ffffff; margin: 0; padding: 0; max-width: none;">
-      
-      <!-- Botón de Cerrar TV -->
-      <button onclick="app.cerrarModoTV()" style="position: absolute; top: 1rem; right: 1rem; z-index: 50; background: rgba(0,0,0,0.5); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-weight: bold;">✕ Cerrar TV</button>
 
-      <div style="height: 100vh; width: 100vw; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif;">
-        
+      <!-- Botón de Cerrar TV -->
+      <button onclick="app.cerrarModoTV()"
+        style="position: absolute; top: 1rem; right: 1rem; z-index: 50; background: rgba(0,0,0,0.5); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-weight: bold;">✕
+        Cerrar TV</button>
+
+      <div
+        style="height: 100vh; width: 100vw; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif;">
+
         <!-- Zona Principal (3 Columnas) -->
         <div style="flex: 1; display: flex; flex-direction: row; padding: 1rem; gap: 1.5rem; overflow: hidden;">
-          
+
           <!-- COLUMNA 1: HISTORIAL (25%) -->
           <div style="width: 25%; display: flex; flex-direction: column;">
             <!-- Logo -->
             <div style="text-align: center; margin-bottom: 1rem;">
-              <img src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png" alt="Logo" style="max-height: 100px; object-fit: contain;">
+              <img
+                src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png"
+                alt="Logo" style="max-height: 100px; object-fit: contain;">
             </div>
-            
+
             <!-- Lista de Turnos Pasados -->
-            <div id="tvUltimosLlamados" style="flex: 1; display: flex; flex-direction: column; gap: 0.8rem; overflow-y: hidden;">
+            <div id="tvUltimosLlamados"
+              style="flex: 1; display: flex; flex-direction: column; gap: 0.8rem; overflow-y: hidden;">
               <!-- Placeholder -->
             </div>
           </div>
-          
+
           <!-- COLUMNA 2: VIDEO VERTICAL (35%) -->
-          <div style="width: 35%; border-radius: 16px; overflow: hidden; background: #000; box-shadow: 0 10px 25px rgba(0,0,0,0.3); position: relative;">
-               <!-- Para un video vertical, el contenedor estrecho y alto es ideal -->
-               <video id="tvVideoPlayer" autoplay muted controls style="width: 100%; height: 100%; object-fit: cover;">
-                 Tu navegador no soporta videos.
-               </video>
+          <div
+            style="width: 35%; border-radius: 16px; overflow: hidden; background: #000; box-shadow: 0 10px 25px rgba(0,0,0,0.3); position: relative;">
+            <!-- Para un video vertical, el contenedor estrecho y alto es ideal -->
+            <video id="tvVideoPlayer" autoplay muted controls style="width: 100%; height: 100%; object-fit: cover;">
+              Tu navegador no soporta videos.
+            </video>
           </div>
-          
+
           <!-- COLUMNA 3: LLAMANDO ACTUAL (40%) -->
           <div style="width: 40%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-              <h2 style="font-size: 2.5rem; font-weight: 900; color: #1e293b; margin-bottom: 1rem; text-transform: uppercase;">LLAMANDO:</h2>
-              
-              <div id="tvContent" style="width: 95%; border: 6px solid #dc2626; border-radius: 24px; overflow: hidden; box-shadow: 0 15px 35px rgba(0,0,0,0.25); text-align: center;">
-                 <div style="background: white; color: #dc2626; font-weight: 900; font-size: 3rem; padding: 1rem;">ESPERANDO LLAMADOS</div>
-                 <div style="background: #dc2626; color: white; font-weight: 900; font-size: 5rem; padding: 1.5rem;">---</div>
+            <h2
+              style="font-size: 2.5rem; font-weight: 900; color: #1e293b; margin-bottom: 1rem; text-transform: uppercase;">
+              LLAMANDO:</h2>
+
+            <div id="tvContent"
+              style="width: 95%; border: 6px solid #dc2626; border-radius: 24px; overflow: hidden; box-shadow: 0 15px 35px rgba(0,0,0,0.25); text-align: center;">
+              <div style="background: white; color: #dc2626; font-weight: 900; font-size: 3rem; padding: 1rem;">
+                ESPERANDO LLAMADOS</div>
+              <div style="background: #dc2626; color: white; font-weight: 900; font-size: 5rem; padding: 1.5rem;">---
               </div>
+            </div>
           </div>
         </div>
 
         <!-- Barra Inferior -->
-        <div style="height: 60px; background: #2563eb; color: white; display: flex; justify-content: space-between; align-items: center; padding: 0 2rem; font-size: 1.2rem; font-weight: 600;">
+        <div
+          style="height: 60px; background: #2563eb; color: white; display: flex; justify-content: space-between; align-items: center; padding: 0 2rem; font-size: 1.2rem; font-weight: 600;">
           <div style="display: flex; gap: 1rem; align-items: center;">
-            <svg style="width: 24px; height: 24px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <svg style="width: 24px; height: 24px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
             <span id="tvClock">00:00:00</span>
           </div>
-          <div>Gestión de filas de espera - Renovación Montufareña</div>
-          <div>www.fabianrobles.ec</div>
+          <div id="tvSedeDisplay"
+            style="font-size: 1.8rem; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #fde047;">
+            <!-- Sede se inserta aquí -->
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 0.9rem;">Gestión de filas de espera - Renovación Montufareña</div>
+            <div style="font-size: 0.75rem; opacity: 0.8;">www.fabianrobles.ec | v50</div>
+          </div>
         </div>
-        
+
       </div>
       <script>
         setInterval(() => {
           const el = document.getElementById('tvClock');
-          if(el) {
-            el.innerText = new Date().toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit', second:'2-digit', hour12: true});
+          if (el) {
+            el.innerText = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
           }
         }, 1000);
 
@@ -409,11 +456,11 @@
           ];
           let currentVideoIndex = 0;
           const tvVideoPlayer = document.getElementById('tvVideoPlayer');
-          
+
           if (tvVideoPlayer) {
             // Asignar primer video
             tvVideoPlayer.src = playlist[currentVideoIndex];
-            
+
             // Al terminar, pasar al siguiente
             tvVideoPlayer.addEventListener('ended', () => {
               currentVideoIndex = (currentVideoIndex + 1) % playlist.length;
@@ -552,8 +599,10 @@
           <h2>👀 Estado de Turnos por Especialidad</h2>
           <button onclick="app.cargarEstadoTurnos()" class="btn-action">🔄 Actualizar</button>
         </div>
-        <p style="margin-bottom: 1.5rem; color: var(--text-muted);">Visualiza qué turno se está atendiendo actualmente en cada área o consultorio.</p>
-        <div id="gridEstadoTurnos" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem;">
+        <p style="margin-bottom: 1.5rem; color: var(--text-muted);">Visualiza qué turno se está atendiendo actualmente
+          en cada área o consultorio.</p>
+        <div id="gridEstadoTurnos"
+          style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem;">
           <!-- Contenido dinámico -->
         </div>
       </div>
@@ -639,8 +688,10 @@
         </div>
 
         <div style="display:flex; gap:1rem; margin-bottom: 1.5rem;">
-          <button class="btn-large" style="background:var(--primary); flex:1;" onclick="app.llamarATriaje(document.getElementById('triajeTurnoId').value)">📢 Llamar a TV</button>
-          <button class="btn-large" style="background:var(--primary); flex:1;" onclick="app.volverALlamarTriaje(document.getElementById('triajeTurnoId').value)">🔔 Re-llamar a TV</button>
+          <button class="btn-large" style="background:var(--primary); flex:1;"
+            onclick="app.llamarATriaje(document.getElementById('triajeTurnoId').value)">📢 Llamar a TV</button>
+          <button class="btn-large" style="background:var(--primary); flex:1;"
+            onclick="app.volverALlamarTriaje(document.getElementById('triajeTurnoId').value)">🔔 Re-llamar a TV</button>
         </div>
 
         <button id="btnGuardarTriaje" class="btn-large btn-success" onclick="app.guardarTriaje()">
@@ -897,8 +948,18 @@
     <!-- VISTA: ADMIN -->
     <div id="view-admin" class="view">
       <div class="card">
-        <div class="card-header" style="margin-bottom:1rem;">
-          <h2>⚙️ Panel de Administración</h2>
+        <div class="card-header" style="margin-bottom:1rem; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <h2>⚙️ Panel de Administración</h2>
+            <div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 0.9rem; font-weight: bold; color: var(--text-muted);">Sede Activa:</span>
+              <select id="adminSedeSelector" onchange="app.cambiarSedeAdmin(this.value)"
+                style="padding: 0.4rem 1rem; border-radius: 8px; border: 1.5px solid var(--primary); background: rgba(79, 70, 229, 0.1); color: var(--primary); font-weight: bold; font-family: 'Outfit', sans-serif; cursor: pointer; outline: none;">
+                <option value="Sede A">Sede A</option>
+                <option value="Sede B">Sede B</option>
+              </select>
+            </div>
+          </div>
           <div class="card-header-actions">
             <button onclick="app.descargarExcel()" class="btn-action" style="background: var(--success);">📥 Excel
               Pacientes</button>
@@ -938,19 +999,41 @@
                 <option value="">-- Sin Área --</option>
               </select>
             </div>
+            <div class="form-group">
+              <label>Sede Designada</label>
+              <select id="adminNewSede">
+                <option value="Sede A">Sede A</option>
+                <option value="Sede B">Sede B</option>
+              </select>
+            </div>
           </div>
           <button class="btn-action" style="background: var(--primary);" onclick="app.adminCrearUsuario()">
             💾 Guardar Usuario
           </button>
         </div>
 
-        <!-- SECCIÓN: PROTECCIÓN DE DATOS -->
+        <!-- SECCIÓN: CONFIGURACIÓN GENERAL Y SEDES -->
         <div class="card-section" style="margin-top: 2rem; border-top: 2px solid var(--border); padding-top: 1.5rem;">
-          <h3>🛡️ Protección de Datos y Privacidad</h3>
+          <h3>⚙️ Configuración General y Sedes</h3>
           <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
-            Configuración para la generación de la Política de Privacidad en PDF.
+            Aquí puedes personalizar los nombres públicos de las Sedes y configurar los datos de la clínica para los
+            documentos.
           </p>
 
+          <div class="form-grid">
+            <div class="form-group full-width" style="display: flex; gap: 1rem;">
+              <div style="flex: 1;">
+                <label>Nombre Público para "Sede A"</label>
+                <input type="text" id="dpNombreSedeA" placeholder="Ej: Matriz, Sede Norte, etc.">
+              </div>
+              <div style="flex: 1;">
+                <label>Nombre Público para "Sede B"</label>
+                <input type="text" id="dpNombreSedeB" placeholder="Ej: Sucursal, Sede Sur, etc.">
+              </div>
+            </div>
+          </div>
+
+          <h4 style="margin-top: 1.5rem; margin-bottom: 1rem;">Datos Legales y Privacidad</h4>
           <div class="form-grid">
             <div class="form-group full-width">
               <label>Razón Social de la Clínica</label>
@@ -976,25 +1059,37 @@
 
           <h4 style="margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--text-dark);">Responsables de Revisión</h4>
           <div class="form-grid">
-            <div class="form-group full-width" style="background: rgba(0,0,0,0.02); padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md);">
+            <div class="form-group full-width"
+              style="background: rgba(0,0,0,0.02); padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md);">
               <label style="font-weight: bold; color: var(--primary);">Responsable de Revisión Jurídica</label>
               <input type="text" id="dpJuridicoNombre" placeholder="Nombre completo" style="margin-bottom: 0.5rem;">
-              <input type="text" id="dpJuridicoId" placeholder="Identificación profesional (Opcional)" style="margin-bottom: 0.5rem;">
+              <input type="text" id="dpJuridicoId" placeholder="Identificación profesional (Opcional)"
+                style="margin-bottom: 0.5rem;">
               <input type="email" id="dpJuridicoCorreo" placeholder="Correo electrónico" style="margin-bottom: 0.5rem;">
               <label>Firma (PNG/JPG con fondo transparente):</label>
-              <input type="file" id="dpJuridicoFirmaFile" accept="image/png, image/jpeg" onchange="app.cargarFirma(this, 'Juridico')">
-              <img id="dpJuridicoFirmaPreview" style="max-height: 80px; margin-top: 0.5rem; display: none; border: 1px dashed var(--border); padding: 0.5rem;" alt="Vista previa de firma">
-              <button class="btn-action" style="margin-top: 0.5rem; display: none; background: #dc2626;" id="dpJuridicoFirmaRemove" onclick="app.eliminarFirma('Juridico')">Eliminar Firma</button>
+              <input type="file" id="dpJuridicoFirmaFile" accept="image/png, image/jpeg"
+                onchange="app.cargarFirma(this, 'Juridico')">
+              <img id="dpJuridicoFirmaPreview"
+                style="max-height: 80px; margin-top: 0.5rem; display: none; border: 1px dashed var(--border); padding: 0.5rem;"
+                alt="Vista previa de firma">
+              <button class="btn-action" style="margin-top: 0.5rem; display: none; background: #dc2626;"
+                id="dpJuridicoFirmaRemove" onclick="app.eliminarFirma('Juridico')">Eliminar Firma</button>
             </div>
 
-            <div class="form-group full-width" style="background: rgba(0,0,0,0.02); padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md);">
-              <label style="font-weight: bold; color: var(--primary);">Responsable de Revisión Técnica y Seguridad</label>
+            <div class="form-group full-width"
+              style="background: rgba(0,0,0,0.02); padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md);">
+              <label style="font-weight: bold; color: var(--primary);">Responsable de Revisión Técnica y
+                Seguridad</label>
               <input type="text" id="dpTecnicoNombre" placeholder="Nombre completo" style="margin-bottom: 0.5rem;">
               <input type="email" id="dpTecnicoCorreo" placeholder="Correo electrónico" style="margin-bottom: 0.5rem;">
               <label>Firma (PNG/JPG con fondo transparente):</label>
-              <input type="file" id="dpTecnicoFirmaFile" accept="image/png, image/jpeg" onchange="app.cargarFirma(this, 'Tecnico')">
-              <img id="dpTecnicoFirmaPreview" style="max-height: 80px; margin-top: 0.5rem; display: none; border: 1px dashed var(--border); padding: 0.5rem;" alt="Vista previa de firma">
-              <button class="btn-action" style="margin-top: 0.5rem; display: none; background: #dc2626;" id="dpTecnicoFirmaRemove" onclick="app.eliminarFirma('Tecnico')">Eliminar Firma</button>
+              <input type="file" id="dpTecnicoFirmaFile" accept="image/png, image/jpeg"
+                onchange="app.cargarFirma(this, 'Tecnico')">
+              <img id="dpTecnicoFirmaPreview"
+                style="max-height: 80px; margin-top: 0.5rem; display: none; border: 1px dashed var(--border); padding: 0.5rem;"
+                alt="Vista previa de firma">
+              <button class="btn-action" style="margin-top: 0.5rem; display: none; background: #dc2626;"
+                id="dpTecnicoFirmaRemove" onclick="app.eliminarFirma('Tecnico')">Eliminar Firma</button>
             </div>
           </div>
 
@@ -1102,8 +1197,18 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- App logic -->
-  <script src="app.js?v=30"></script>
-
+  <script>
+    function aplicarTema(t) {
+      document.documentElement.setAttribute('data-theme', t);
+      const b = document.getElementById('themeToggle');
+      if (b) b.textContent = t === 'dark' ? '☀️' : '🌙';
+      try { localStorage.setItem('tema', t); } catch (e) { }
+    }
+    function toggleTema() {
+      aplicarTema(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    }
+    aplicarTema((function () { try { return localStorage.getItem('tema') || 'light'; } catch (e) { return 'light'; } })());
+  </script>
+  <script src="app.js?v=59"></script>
 </body>
-
 </html>
