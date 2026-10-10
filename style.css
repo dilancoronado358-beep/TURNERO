@@ -77,12 +77,16 @@ body {
 #overlay {
   position: fixed;
   inset: 0;
-  background-color: #f1f5f9; /* Light formal gray */
+  background-color: #ffffff;
   z-index: 1000;
   display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 1.5rem;
+  flex-direction: row;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   animation: fadeIn 0.3s ease;
 }
 
@@ -1862,8 +1866,8 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb {
   /* Split Screen Login -> Stacked */
   .login-page {
     flex-direction: column !important;
-    height: auto !important;
-    min-height: 100vh;
+    height: 100% !important;
+    overflow-y: auto !important;
   }
   .login-page > div:first-child {
     flex: 0 0 auto !important;
