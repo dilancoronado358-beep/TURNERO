@@ -1,0 +1,3892 @@
+// ============================================================
+// CONFIGURACIÓN SUPABASE
+// ============================================================
+const SUPABASE_URL = 'https://tmucjycefiyhthgoladq.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_GRERFbwae5xPLjMPG55zXA_Z2GWb3qB';
+let sb = null;
+
+// ============================================================
+// LISTAS ESTÁTICAS
+// ============================================================
+// Áreas reales del sistema (usadas para asignar doctores y filtrar colas)
+const AREAS_ESTATICAS = [
+  'Medicina General',
+  'Odontología',
+  'Pediatría',
+  'Obstetricia',
+  'Papanicolaou',
+  'Traumatología',
+  'Fisioterapia',
+  'Psicología Clínica',
+  'Nutrición',
+  'Urología',
+  'Imagenología',
+  'Electrocardiograma',
+  'Farmacia',
+  'Corte de Cabello',
+  'Cirujano'
+];
+
+// Opciones que ve el Turnero al registrar al paciente.
+// Algunas son alias que se redirigen a un área real con una nota de motivo.
+const OPCIONES_ESPECIALIDAD = [
+  { label: 'Medicina General', area: 'Medicina General', motivo: null },
+  { label: 'Odontología', area: 'Odontología', motivo: null },
+  { label: 'Pediatría', area: 'Pediatría', motivo: null },
+  { label: 'Obstetricia', area: 'Obstetricia', motivo: null },
+  { label: 'Solo Papanicolaou', area: 'Papanicolaou', motivo: null },
+  { label: 'Traumatología', area: 'Traumatología', motivo: null },
+  { label: 'Fisioterapia', area: 'Fisioterapia', motivo: null },
+  { label: 'Psicología Clínica', area: 'Psicología Clínica', motivo: null },
+  { label: 'Nutrición', area: 'Nutrición', motivo: null },
+  { label: 'Urología', area: 'Urología', motivo: null },
+  { label: 'Imagenología', area: 'Imagenología', motivo: null },
+  { label: 'Electrocardiograma', area: 'Electrocardiograma', motivo: null },
+  { label: 'Farmacia', area: 'Farmacia', motivo: null },
+  { label: 'Corte de Cabello', area: 'Corte de Cabello', motivo: null },
+  { label: 'Cirujano', area: 'Cirujano', motivo: null }
+];
+
+
+
+// ============================================================
+// ESTADO GLOBAL
+// ============================================================
+const Estado = {
+  role: null,           // 'turnero' | 'enfermera' | 'doctor' | 'admin'
+  userName: '',
+  adminPass: '',        // Se guarda temporalmente para las llamadas a RPC de admin
+  areaId: null,         // Área seleccionada por el doctor
+  sede: 'Sede A',       // Sede actual (Lugar A, Lugar B) - Default to Sede A
+  nombreSedeA: 'Sede A',// Nombre público de la Sede A
+  nombreSedeB: 'Sede B',// Nombre público de la Sede B
+  areas: [],
+  enfermeras: [],
+  online: false,
+  autoRefreshInterval: null,
+  brigadaDesde: null    // Timestamp ISO de inicio de brigada activa. Solo se muestran pacientes registrados DESDE esta fecha.
+};
+
+// ============================================================
+// APP
+// ============================================================
+const app = {
+
+  // ---- ARRANQUE ----
+  async init() {
+    Estado.areas = AREAS_ESTATICAS;
+    this.llenarSelects();
+
+    try {
+      if (!window.supabase) throw new Error('SDK no disponible');
+      
+      // --- MONKEY PATCH FETCH PARA SEDES ---
+      const originalFetch = window.fetch;
+      window.__originalFetch = originalFetch.bind(window); // Guardar referencia segura
+      window.fetch = async function() {
+        let url = arguments[0];
+        let options = arguments[1] || {};
+        
+        let urlStr = '';
+        if (typeof url === 'string') urlStr = url;
+        else if (url instanceof URL) urlStr = url.toString();
+        else if (url && url.url) urlStr = url.url; // Request object (partial support)
+        else urlStr = String(url);
+        
+        if (urlStr.includes('/rest/v1/pacientes_espera')) {
+          const isGlobalSearch = urlStr.includes('skip_patch');
+          if (Estado.sede && !isGlobalSearch) {
+            // Para SELECT, UPDATE, DELETE (params en la URL)
+            if (!options.method || options.method === 'GET' || options.method === 'HEAD') {
+               urlStr += (urlStr.includes('?') ? '&' : '?') + 'sede=eq.' + encodeURIComponent(Estado.sede);
+            }
+            // Para INSERT y UPDATE (body en JSON)
+            if ((options.method === 'POST' || options.method === 'PATCH') && options.body) {
+              try {
+                let body = JSON.parse(options.body);
+                if (Array.isArray(body)) {
+                  body.forEach(item => item.sede = Estado.sede);
+                } else {
+                  body.sede = Estado.sede;
+                }
+                options.body = JSON.stringify(body);
+              } catch(e) { console.error('Fetch Patch Error', e); }
+            }
+          }
+        }
+        
+        if (url instanceof URL) {
+            arguments[0] = new URL(urlStr);
+        } else if (typeof url === 'string') {
+            arguments[0] = urlStr;
+        } else if (url && url.url && typeof url.clone === 'function') {
+            // If it's a Request object, we would need to clone and reconstruct it, 
+            // but supabase-js typically doesn't pass Request objects directly to the global fetch.
+            // We just override the url property if possible (it's read-only in standard Request, so we might fail here,
+            // but supabase uses fetch(string, options)).
+            arguments[0] = urlStr;
+        } else {
+            arguments[0] = urlStr;
+        }
+        arguments[1] = options;
+        return originalFetch.apply(window, arguments);
+      };
+      // -------------------------------------
+
+      sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+      Estado.online = true;
+      console.log('✅ Supabase en línea (Multi-Sede Activo)');
+      await this.cargarConfiguracionDP();
+      this.verificarSesionGuardada();
+    } catch (e) {
+      Estado.online = false;
+      console.warn('⚠️ Modo offline / tabla no lista:', e.message);
+    }
+  },
+
+  llenarSelects() {
+    // Opciones para el Turnero (incluye alias como Solo Papanicolau)
+    const selPac = document.getElementById('pacienteEspecialidad');
+    if (selPac) {
+      selPac.innerHTML = '<option value="">-- Seleccionar Área / Servicio --</option>';
+      OPCIONES_ESPECIALIDAD.forEach(op => {
+        selPac.innerHTML += `<option value="${op.label}">${op.label}${op.motivo ? ' 📋' : ''}</option>`;
+      });
+    }
+    // Áreas reales para el admin (doctores se asignan a áreas reales)
+    const selAdmin = document.getElementById('adminNewArea');
+    if (selAdmin) {
+      selAdmin.innerHTML = '<option value="">-- Sin Área --</option>';
+      Estado.areas.forEach(a => { selAdmin.innerHTML += `<option value="${a}">${a}</option>`; });
+    }
+  },
+
+  async obtenerInicioBrigada() {
+    if (!sb || !Estado.online) {
+      const bG = localStorage.getItem('brigada_activa_desde_' + Estado.sede);
+      Estado.brigadaDesde = bG || '2000-01-01T00:00:00.000Z';
+      return;
+    }
+    // Usar __originalFetch si está disponible (evita que el monkey patch interfiera)
+    const fetchFn = window.__originalFetch || window.fetch;
+    try {
+      // Buscar marcador con sede específica (nuevo formato)
+      const { data: bData1 } = await sb.from('pacientes_espera')
+        .select('created_at')
+        .eq('nombre', '[SISTEMA_NUEVA_BRIGADA_' + Estado.sede + ']')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      // Buscar marcador sin sede (formato legado)
+      const { data: bData2 } = await sb.from('pacientes_espera')
+        .select('created_at')
+        .eq('nombre', '[SISTEMA_NUEVA_BRIGADA]')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      // Tomar el más reciente entre los dos formatos
+      const candidatos = [];
+      if (Array.isArray(bData1) && bData1.length > 0) candidatos.push(bData1[0].created_at);
+      if (Array.isArray(bData2) && bData2.length > 0) candidatos.push(bData2[0].created_at);
+
+      if (candidatos.length > 0) {
+        candidatos.sort((a, b) => new Date(b) - new Date(a));
+        Estado.brigadaDesde = candidatos[0];
+        localStorage.setItem('brigada_activa_desde_' + Estado.sede, Estado.brigadaDesde);
+      } else {
+        // Sin brigada en BD, usar localStorage o fecha muy vieja
+        const bG = localStorage.getItem('brigada_activa_desde_' + Estado.sede);
+        Estado.brigadaDesde = bG || '2000-01-01T00:00:00.000Z';
+      }
+      console.log('✅ Brigada cargada para', Estado.sede, 'desde:', Estado.brigadaDesde);
+    } catch(e) {
+      console.error('Error obtenerInicioBrigada:', e);
+      const bG = localStorage.getItem('brigada_activa_desde_' + Estado.sede);
+      Estado.brigadaDesde = bG || '2000-01-01T00:00:00.000Z';
+    }
+  },
+
+  verificarSesionGuardada() {
+    const sesionInfo = localStorage.getItem('turnero_session');
+    if (sesionInfo) {
+      try {
+        const parsed = JSON.parse(sesionInfo);
+        Estado.role = parsed.role;
+        Estado.userName = parsed.userName;
+        Estado.areaId = parsed.areaId;
+        Estado.adminPass = parsed.adminPass || '';
+        Estado.sede = parsed.sede || 'Sede A';
+        this.restaurarVistaSegunRol();
+      } catch (e) {
+        console.error('Error parseando sesión', e);
+      }
+    }
+  },
+
+  async restaurarVistaSegunRol() {
+    await this.obtenerInicioBrigada();
+    if (Estado.role === 'admin') {
+      this.cerrarOverlay('👑', 'Admin (' + Estado.sede + ')');
+      this.mostrarVista('admin');
+      
+      const select = document.getElementById('adminSedeSelector');
+      if (select) select.value = Estado.sede;
+      
+      this.adminCargarUsuarios();
+      this.cargarConfiguracionDP();
+      setTimeout(() => this._actualizarInfoBrigada(), 100);
+    } else if (Estado.role === 'turnero') {
+      this.cerrarOverlay('📝', Estado.userName);
+      this.mostrarVista('darTurno');
+      this.cargarHistorialTurnero();
+      this.cargarAgenda();
+    } else if (Estado.role === 'enfermera') {
+      this.cerrarOverlay('🩺', Estado.userName);
+      this.mostrarVista('triaje');
+      this.cargarPacientesTriaje();
+      if (Estado.autoRefreshInterval) clearInterval(Estado.autoRefreshInterval);
+      Estado.autoRefreshInterval = setInterval(() => this.cargarPacientesTriaje(), 5000);
+    } else if (Estado.role === 'doctor') {
+      if (!Estado.areaId) return; // Error preventivo
+      this.cerrarOverlay('👨‍⚕️', Estado.areaId);
+      const titulo = document.getElementById('tituloConsultorio');
+      if (titulo) titulo.innerText = 'Área: ' + Estado.areaId;
+      this.mostrarVista('misPacientes');
+      await this.cargarPacientesArea();
+      if (Estado.autoRefreshInterval) clearInterval(Estado.autoRefreshInterval);
+      Estado.autoRefreshInterval = setInterval(() => this.cargarPacientesArea(), 5000);
+    }
+    this.activarTab('Principal');
+  },
+
+  // ---- NAVEGACIÓN ----
+
+  activarTab(tabId) {
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById('navBtn' + tabId);
+    if (btn) btn.classList.add('active');
+  },
+
+  mostrarVista(vistaId) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    const el = document.getElementById('view-' + vistaId);
+    if (el) el.classList.add('active');
+  },
+
+  cerrarOverlay(badge, nombre) {
+    document.getElementById('overlay').style.display = 'none';
+    const rb = document.getElementById('roleBadge');
+    const dn = document.getElementById('displayUserName');
+    if (rb) rb.innerText = badge;
+    if (dn) dn.innerText = nombre;
+
+    const nav = document.getElementById('mainNav');
+    if (nav) nav.style.display = 'block';
+
+    const btnDash = document.getElementById('navBtnDashboard');
+    if (btnDash) {
+      btnDash.style.display = Estado.role === 'admin' ? 'inline-block' : 'none';
+    }
+
+    const btnEstado = document.getElementById('navBtnEstadoTurnos');
+    if (btnEstado) {
+      btnEstado.style.display = (Estado.role === 'turnero' || Estado.role === 'admin') ? 'inline-block' : 'none';
+    }
+  },
+
+  // ---- CERRAR SESIÓN ----
+  cerrarSesion() {
+    if (Estado.autoRefreshInterval) {
+      clearInterval(Estado.autoRefreshInterval);
+      Estado.autoRefreshInterval = null;
+    }
+    Estado.role = null;
+    Estado.userName = '';
+    Estado.areaId = null;
+    Estado.adminPass = '';
+    localStorage.removeItem('turnero_session');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('overlay').style.display = 'flex';
+    const nav = document.getElementById('mainNav');
+    if (nav) nav.style.display = 'none';
+    document.getElementById('loginUsername').value = '';
+    document.getElementById('loginPassword').value = '';
+  },
+
+  // ============================================================
+  // MODO PANTALLA PÚBLICA (TV)
+  // ============================================================
+  tvInterval: null,
+  tvUltimos: [],
+  tvPrimeraCargaHecha: false,
+
+  async abrirModoTV() {
+    document.getElementById('overlay').style.display = 'none';
+    const header = document.querySelector('header');
+    if (header) header.style.display = 'none';
+    const loginSedeSelect = document.getElementById('loginSede');
+    if (loginSedeSelect && loginSedeSelect.value) {
+      Estado.sede = loginSedeSelect.value;
+    }
+
+    this.mostrarVista('tv');
+
+    await this.obtenerInicioBrigada(); // Cargar brigada para la TV
+
+    const tvSedeDisplay = document.getElementById('tvSedeDisplay');
+    if (tvSedeDisplay) {
+      if (Estado.sede === 'Sede A') tvSedeDisplay.innerText = Estado.nombreSedeA;
+      else if (Estado.sede === 'Sede B') tvSedeDisplay.innerText = Estado.nombreSedeB;
+      else tvSedeDisplay.innerText = Estado.sede || '';
+    }
+
+    // Activar sonido inicial para permisos de navegador (autoplay policy)
+    // y forzar la carga de voces disponibles
+    try {
+      const u = new SpeechSynthesisUtterance('');
+      u.volume = 0;
+      speechSynthesis.speak(u);
+      // Forzar carga inmediata de la lista de voces
+      window.speechSynthesis.getVoices();
+    } catch (e) { }
+
+    this.tvUltimos = [];
+    this.tvPrimeraCargaHecha = false;
+    this.tvInterval = setInterval(() => this.actualizarTV(), 3000);
+    this.actualizarTV();
+  },
+
+  cerrarModoTV() {
+    if (this.tvInterval) clearInterval(this.tvInterval);
+    document.getElementById('overlay').style.display = 'flex';
+    const header = document.querySelector('header');
+    if (header) header.style.display = 'flex';
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  },
+
+  async actualizarTV() {
+    if (!Estado.online || !sb) return;
+    try {
+      await this.obtenerInicioBrigada(); // Mantener fresca la fecha
+
+      const { data, error } = await sb.from('pacientes_espera')
+        .select('*')
+        .in('estado', ['en_consulta', 'en_triaje'])
+        .eq('sede', Estado.sede)
+        .gte('created_at', Estado.brigadaDesde)
+        .order('id', { ascending: false });
+
+      if (error) {
+        console.error('[TV] error:', error);
+        throw error;
+      }
+
+      if (!data) return;
+
+      if (!this.tvPrimeraCargaHecha) {
+        this.tvUltimos = {};
+        data.forEach(t => {
+          let sv = {};
+          try { sv = JSON.parse(t.signos_vitales || '{}'); } catch (e) { }
+          this.tvUltimos[t.id] = sv.llamados || 1;
+        });
+
+        // Mostrar datos en pantalla inmediatamente si ya hay pacientes en consulta
+        if (data.length > 0) {
+          const paciente = data[0];
+          const esTriaje = paciente.estado === 'en_triaje';
+          const areaMostrar = esTriaje ? 'SIGNOS VITALES' : paciente.especialidad;
+          const turnoTxt = (paciente.numero_turno_area && !esTriaje)
+            ? paciente.especialidad.substring(0, 3).toUpperCase() + '-' + paciente.numero_turno_area
+            : (esTriaje ? 'Tomar Signos' : 'Nuevo Paciente');
+
+          const mainContent = document.getElementById('tvContent');
+          if (mainContent) {
+            mainContent.innerHTML = `
+               <div style="background: white; color: #dc2626; font-weight: 900; font-size: 2.5rem; padding: 0.5rem; text-transform: uppercase;">${areaMostrar}</div>
+               <div style="background: #dc2626; color: white; font-weight: 900; font-size: 4rem; padding: 0.5rem;">${turnoTxt}</div>
+               <div style="background: white; color: #1e293b; font-weight: 800; font-size: 1.8rem; padding: 0.5rem; border-top: 2px solid #dc2626;">${paciente.nombre}</div>
+            `;
+          }
+
+          const historyContainer = document.getElementById('tvUltimosLlamados');
+          if (historyContainer) {
+            historyContainer.innerHTML = '';
+            for (let i = 1; i < Math.min(data.length, 6); i++) {
+              const p = data[i];
+              const tTxt = p.numero_turno_area ? p.especialidad.substring(0, 3).toUpperCase() + '-' + p.numero_turno_area : 'Turno';
+              historyContainer.innerHTML += `
+                <div style="border: 2px solid #2563eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 0.5rem;">
+                  <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${p.estado === 'en_triaje' ? 'TRIAJE' : p.especialidad}</div>
+                  <div style="background: #2563eb; color: white; font-weight: 800; font-size: ${p.estado === 'en_triaje' ? '1.2rem' : '1.6rem'}; text-align: center; padding: 0.3rem;">${p.estado === 'en_triaje' ? 'SIGNOS VITALES' : tTxt}</div>
+                  <div style="background: white; color: #334155; font-weight: 700; font-size: 1rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.nombre}</div>
+                </div>
+              `;
+            }
+          }
+        } else {
+          const mainContent = document.getElementById('tvContent');
+          if (mainContent) {
+            mainContent.innerHTML = `
+              <div style="background: white; color: #dc2626; font-weight: 900; font-size: 3rem; padding: 1rem;">ESPERANDO LLAMADOS</div>
+              <div style="background: #dc2626; color: white; font-weight: 900; font-size: 5rem; padding: 1.5rem;">---</div>
+            `;
+          }
+          const historyContainer = document.getElementById('tvUltimosLlamados');
+          if (historyContainer) historyContainer.innerHTML = '';
+        }
+
+        this.tvPrimeraCargaHecha = true;
+        return;
+      }
+
+      // Encontrar pacientes que son nuevos o cuyo contador de 'llamados' ha incrementado
+      const nuevos = data.filter(t => {
+        let sv = {};
+        try { sv = JSON.parse(t.signos_vitales || '{}'); } catch (e) { }
+        const count = sv.llamados || 1;
+        return this.tvUltimos[t.id] !== count;
+      });
+
+      if (nuevos.length > 0) {
+        const paciente = nuevos[0]; // Tomar el primero nuevo o re-llamado
+        this.anunciarTurnoTV(paciente);
+
+        // Actualizar lista
+        this.tvUltimos = {};
+        data.forEach(t => {
+          let sv = {};
+          try { sv = JSON.parse(t.signos_vitales || '{}'); } catch (e) { }
+          this.tvUltimos[t.id] = sv.llamados || 1;
+        });
+      }
+
+    } catch (e) {
+      console.error('Error TV:', e);
+    }
+  },
+
+  anunciarTurnoTV(paciente) {
+    const esTriaje = paciente.estado === 'en_triaje';
+    const areaMostrar = esTriaje ? 'SIGNOS VITALES' : paciente.especialidad;
+    const turnoTxt = (paciente.numero_turno_area && !esTriaje)
+      ? paciente.especialidad.substring(0, 3).toUpperCase() + '-' + paciente.numero_turno_area
+      : (esTriaje ? 'Tomar Signos' : 'Nuevo Paciente');
+
+    const mainContent = document.getElementById('tvContent');
+    if (mainContent) {
+      mainContent.innerHTML = `
+        <div style="background: white; color: #dc2626; font-weight: 900; font-size: 2.5rem; padding: 0.5rem; text-transform: uppercase;">${areaMostrar}</div>
+        <div style="background: #dc2626; color: white; font-weight: 900; font-size: 4rem; padding: 0.5rem; animation: pulse 2s infinite;">${turnoTxt}</div>
+        <div style="background: white; color: #1e293b; font-weight: 800; font-size: 1.8rem; padding: 0.5rem; border-top: 2px solid #dc2626;">${paciente.nombre}</div>
+      `;
+    }
+
+    const historyContainer = document.getElementById('tvUltimosLlamados');
+    if (historyContainer) {
+      const historyItem = document.createElement('div');
+      historyItem.style.cssText = "border: 2px solid #2563eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 0.5rem; flex-shrink: 0;";
+      historyItem.innerHTML = `
+        <div style="background: white; color: #1e3a8a; font-weight: 800; font-size: 1.2rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${esTriaje ? 'TRIAJE' : paciente.especialidad}</div>
+        <div style="background: #2563eb; color: white; font-weight: 800; font-size: ${esTriaje ? '1.2rem' : '1.6rem'}; text-align: center; padding: 0.3rem;">${esTriaje ? 'SIGNOS VITALES' : turnoTxt}</div>
+        <div style="background: white; color: #334155; font-weight: 700; font-size: 1rem; text-align: center; padding: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${paciente.nombre}</div>
+      `;
+
+      historyContainer.prepend(historyItem);
+      if (historyContainer.children.length > 5) {
+        historyContainer.lastChild.remove();
+      }
+    }
+
+    // 1. Sonido Ding-Dong (AudioContext)
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const playTone = (freq, startTime, duration) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, startTime);
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.6, startTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      };
+      playTone(659.25, ctx.currentTime, 1.5);
+      playTone(523.25, ctx.currentTime + 0.5, 2.0);
+    } catch (e) {
+      console.error('AudioContext error:', e);
+    }
+
+    // 2. Voz anunciando el paciente (SpeechSynthesis)
+    // FIX CHROME: después de mucho tiempo abierto, el motor se pausa silenciosamente.
+    // Solución: cancel → 100ms → speak → pause+resume inmediato para "despertarlo".
+    setTimeout(() => {
+      try {
+        const synth = window.speechSynthesis;
+        if (!synth) return;
+
+        const textoVoz = esTriaje
+          ? `Atención. ${paciente.nombre}. Pasar a Signos Vitales.`
+          : `Turno ${turnoTxt}. ${paciente.nombre}. Pasar a ${paciente.especialidad}.`;
+
+        const hablar = () => {
+          synth.cancel();
+          setTimeout(() => {
+            const voces = synth.getVoices();
+            const vocesEs = voces.filter(v => v.lang.startsWith('es'));
+            const vozIdeal = vocesEs.find(v => /Natural|Online/i.test(v.name))
+              || vocesEs.find(v => /Google|Microsoft/i.test(v.name))
+              || vocesEs[0]
+              || voces[0];
+
+            const u = new SpeechSynthesisUtterance(textoVoz);
+            u.lang = 'es-ES';
+            u.rate = 0.82;
+            u.pitch = 1.0;
+            u.volume = 1.0;
+            if (vozIdeal) u.voice = vozIdeal;
+
+            synth.speak(u);
+
+            // FIX CLAVE: pause+resume despierta el motor cuando lleva mucho tiempo activo
+            setTimeout(() => { synth.pause(); synth.resume(); }, 50);
+
+            u.onerror = (ev) => console.error('SpeechSynthesis error:', ev.error);
+          }, 100);
+        };
+
+        if (synth.getVoices().length > 0) {
+          hablar();
+        } else {
+          synth.addEventListener('voiceschanged', hablar, { once: true });
+          setTimeout(hablar, 800);
+        }
+      } catch (e) {
+        console.error('Error de voz:', e);
+      }
+    }, 1800); // esperar después del Ding-Dong
+  },
+
+  // ============================================================
+  // ROL: TURNERO (solo registra datos básicos, SIN número de turno)
+  // ============================================================
+  async iniciarSesion() {
+    const user = (document.getElementById('loginUsername').value || '').trim();
+    const pass = (document.getElementById('loginPassword').value || '').trim();
+
+    if (!user || !pass) {
+      this.toast('Ingresa usuario y contraseña', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btnIngresar');
+    const originalText = btn.innerText;
+    btn.disabled = true;
+    btn.innerText = 'Verificando...';
+
+    try {
+      if (!Estado.online || !sb) throw new Error('Sin conexión a Base de Datos');
+
+      let loginOk = false;
+      let loginData = null;
+
+      // ── INTENTO 1: RPC verificar_login ──────────────────────────
+      try {
+        const { data, error } = await sb.rpc('verificar_login', {
+          p_username: user,
+          p_password: pass
+        });
+        if (!error && data && data.success) {
+          loginOk = true;
+          loginData = data;
+        } else {
+          console.error('RPC1:', error?.message || data?.message || JSON.stringify(data));
+        }
+      } catch (e) { console.error('RPC1-ex:', e.message); }
+
+      // ── INTENTO 2: RPC username en minúsculas ────────────────────
+      if (!loginOk) {
+        try {
+          const { data, error } = await sb.rpc('verificar_login', {
+            p_username: user.toLowerCase(),
+            p_password: pass
+          });
+          if (!error && data && data.success) {
+            loginOk = true;
+            loginData = data;
+          } else {
+            console.error('RPC2:', error?.message || data?.message || JSON.stringify(data));
+          }
+        } catch (e) { console.error('RPC2-ex:', e.message); }
+      }
+
+      // ── INTENTO 3: fetch() directo al REST API ───────────────────
+      if (!loginOk) {
+        try {
+          const resp = await fetch(
+            `${SUPABASE_URL}/rest/v1/usuarios?username=ilike.*${encodeURIComponent(user)}*&select=username,password,role,area,sede`,
+            {
+              headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Accept': 'application/json'
+              }
+            }
+          );
+          const rows = await resp.json();
+          console.error('Fetch-single status:', resp.status, 'filas:', Array.isArray(rows) ? rows.length : JSON.stringify(rows));
+
+          if (Array.isArray(rows) && rows.length > 0) {
+            const match = rows.find(u => (u.username || '').trim().toLowerCase() === user.toLowerCase() && u.password === pass);
+            if (match) {
+              loginOk = true;
+              loginData = { success: true, role: match.role, username: match.username, area: match.area || null, sede: match.sede || null };
+            } else {
+              const soloUser = rows.find(u => (u.username || '').trim().toLowerCase() === user.toLowerCase());
+              if (soloUser) {
+                throw new Error(`Pass incorrecta. BD tiene: "${soloUser.password}" — escribiste: "${pass}"`);
+              } else {
+                throw new Error(`Usuario "${user}" no existe en la base de datos`);
+              }
+            }
+          } else if (Array.isArray(rows) && rows.length === 0) {
+            throw new Error(`Usuario "${user}" no existe en la base de datos`);
+          } else {
+            throw new Error(`Error / RLS — status ${resp.status}: ${JSON.stringify(rows).substring(0, 80)}`);
+          }
+        } catch (e) {
+          if (e.message.startsWith('Pass') || e.message.startsWith('Usuario') || e.message.startsWith('Error / RLS')) throw e;
+          console.error('Fetch-ex:', e.message);
+          throw new Error('Error de red: ' + e.message);
+        }
+      }
+      if (!loginOk) throw new Error('No se pudo verificar credenciales');
+
+      // Intentar obtener la sede si el RPC no la devolvió (fallback para usuarios designados a una sede)
+      if (loginOk && !loginData.sede) {
+        try {
+          const respSede = await fetch(
+            `${SUPABASE_URL}/rest/v1/usuarios?username=eq.${encodeURIComponent(loginData.username)}&select=sede`,
+            { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Accept': 'application/json' } }
+          );
+          const rSede = await respSede.json();
+          if (Array.isArray(rSede) && rSede.length > 0 && rSede[0].sede) {
+            loginData.sede = rSede[0].sede;
+          }
+        } catch(e) { console.warn('No se pudo obtener sede del usuario:', e); }
+      }
+
+      // ── Login exitoso ─────────────────────────────────────────────
+      const selectSede = document.getElementById('loginSede');
+      const sedeSeleccionada = selectSede ? selectSede.value.trim() : 'Sede A';
+
+      if (loginData.role !== 'admin') {
+        if (!loginData.sede) {
+          throw new Error('No se pudo verificar la sede de este usuario en la Base de Datos. Pide al Administrador que vuelva a asignarte una sede o verifica tu conexión.');
+        }
+
+        let dbSede = loginData.sede.trim();
+        // Normalizar en caso de que en la BD se haya guardado el alias en lugar del ID interno
+        if (Estado.nombreSedeA && dbSede.toLowerCase() === Estado.nombreSedeA.toLowerCase()) dbSede = 'Sede A';
+        if (Estado.nombreSedeB && dbSede.toLowerCase() === Estado.nombreSedeB.toLowerCase()) dbSede = 'Sede B';
+
+        if (dbSede !== sedeSeleccionada) {
+          let nombreSedeReal = dbSede;
+          if (dbSede === 'Sede A' && Estado.nombreSedeA) nombreSedeReal = Estado.nombreSedeA;
+          if (dbSede === 'Sede B' && Estado.nombreSedeB) nombreSedeReal = Estado.nombreSedeB;
+          
+          let nombreSedeIntento = sedeSeleccionada;
+          if (sedeSeleccionada === 'Sede A' && Estado.nombreSedeA) nombreSedeIntento = Estado.nombreSedeA;
+          if (sedeSeleccionada === 'Sede B' && Estado.nombreSedeB) nombreSedeIntento = Estado.nombreSedeB;
+
+          throw new Error(`Acceso denegado: El usuario no se encuentra registrado en ${nombreSedeIntento}. Pertenece a ${nombreSedeReal}.`);
+        }
+      }
+
+      Estado.sede = sedeSeleccionada;
+
+      Estado.role = loginData.role;
+      Estado.userName = loginData.username;
+      Estado.areaId = loginData.area || null;
+      if (Estado.role === 'admin') Estado.adminPass = pass;
+
+      localStorage.setItem('turnero_session', JSON.stringify({
+        role: Estado.role,
+        userName: Estado.userName,
+        areaId: Estado.areaId,
+        adminPass: Estado.adminPass,
+        sede: Estado.sede
+      }));
+
+      this.restaurarVistaSegunRol();
+
+    } catch (e) {
+      console.error('Login error final:', e.message);
+      this.toast(e.message, 'error');
+      
+      // Si la animación está activa, la ocultamos y volvemos a mostrar el formulario
+      const loader = document.getElementById('medical-loader');
+      const stepLogin = document.getElementById('step-login');
+      if (loader) loader.style.display = 'none';
+      if (stepLogin) {
+        stepLogin.style.display = 'block';
+        stepLogin.style.opacity = '1';
+      }
+    }
+
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = originalText;
+      btn.classList.remove('loading-animation');
+    }
+  },
+
+
+  async buscarPacienteExistente() {
+    const cedulaInput = document.getElementById('pacienteCedula');
+    if (!cedulaInput) return;
+    const cedula = cedulaInput.value.trim();
+    const feedback = document.getElementById('cedulaFeedback');
+
+    if (!cedula || cedula.length < 5) {
+      if (feedback) feedback.style.display = 'none';
+      return;
+    }
+
+    if (!Estado.online || !sb) return;
+
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.color = 'var(--text-muted)';
+      feedback.innerText = 'Buscando paciente...';
+    }
+
+    try {
+      const fetchFn = window.__originalFetch || window.fetch;
+      const resp = await fetchFn(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=nombre,celular,direccion&cedula=eq.' + encodeURIComponent(cedula) + '&order=created_at.desc&limit=1',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+      );
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.message || 'Error en búsqueda');
+
+      if (data && data.length > 0) {
+        const p = data[0];
+        // Remover tags como [Receta: 1234] o [Solo Papanicolau] si existen en el nombre del historial
+        let nombreLimpio = p.nombre || '';
+        if (nombreLimpio.startsWith('[')) {
+          nombreLimpio = nombreLimpio.replace(/^\[.*?\]\s*/, '');
+        }
+
+        document.getElementById('pacienteNameInput').value = nombreLimpio;
+        if (p.celular) document.getElementById('pacienteCelular').value = p.celular;
+        if (p.direccion) document.getElementById('pacienteDireccion').value = p.direccion;
+
+        if (feedback) {
+          feedback.style.color = 'var(--success)';
+          feedback.innerHTML = '✅ Paciente existente. Datos autocompletados.';
+        }
+      } else {
+        if (feedback) {
+          feedback.style.display = 'none';
+        }
+      }
+    } catch (e) {
+      console.error('Error buscando paciente', e);
+      if (feedback) feedback.style.display = 'none';
+    }
+  },
+
+  async darTurno(directoEspecialidad = false) {
+    const btn = document.getElementById(directoEspecialidad ? 'btnDarTurnoDirecto' : 'btnDarTurno');
+    const originalText = btn.innerText;
+    btn.disabled = true;
+    btn.innerText = 'Registrando...';
+
+    const nombre = document.getElementById('pacienteNameInput').value.trim();
+    const cedula = document.getElementById('pacienteCedula').value.trim();
+    const celular = document.getElementById('pacienteCelular').value.trim();
+    const direccion = document.getElementById('pacienteDireccion').value.trim();
+    const seleccion = document.getElementById('pacienteEspecialidad').value;
+
+    if (!nombre) {
+      this.toast('Ingresa el nombre del paciente', 'error');
+      btn.disabled = false; btn.innerText = originalText; return;
+    }
+    if (!seleccion) {
+      this.toast('Selecciona la especialidad / área', 'error');
+      btn.disabled = false; btn.innerText = originalText; return;
+    }
+
+    // Resolver la opción seleccionada → área real + motivo
+    const opcion = OPCIONES_ESPECIALIDAD.find(op => op.label === seleccion);
+    const especialidad = opcion ? opcion.area : seleccion;
+    const motivoExtra = opcion ? opcion.motivo : null;
+
+    try {
+      // Leer si es cita programada
+      const tipoTurnoOpt = document.querySelector('input[name="tipo_turno"]:checked');
+      const esCitaProgramada = tipoTurnoOpt && tipoTurnoOpt.value === 'programado';
+      const fechaCita = esCitaProgramada ? document.getElementById('pacienteFechaCita').value : null;
+
+      if (esCitaProgramada && !fechaCita) {
+        this.toast('Selecciona la fecha y hora para la cita', 'error');
+        btn.disabled = false; btn.innerText = originalText; return;
+      }
+
+      if (Estado.online && sb) {
+        // ACTUALIZAR FECHA DE BRIGADA ANTES DE CALCULAR EL TURNO
+        await this.obtenerInicioBrigada();
+
+        let estadoStr = esCitaProgramada ? 'programado' : (directoEspecialidad ? 'pendiente' : 'en_espera');
+        let atendidoPor = directoEspecialidad ? 'Directo desde Recepción' : null;
+
+        // Solo calcular número de turno si no es cita programada
+        let numTurno = null;
+        if (!esCitaProgramada) {
+          // Buscar turno máximo SOLO dentro de la brigada actual Y de la misma sede
+          const maxResp = await window.__originalFetch(
+            SUPABASE_URL + '/rest/v1/pacientes_espera?select=numero_turno_area&especialidad=eq.' + encodeURIComponent(especialidad) +
+            '&numero_turno_area=not.is.null&sede=eq.' + encodeURIComponent(Estado.sede) +
+            '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+            '&order=numero_turno_area.desc&limit=1',
+            { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+          );
+          const maxData = await maxResp.json();
+
+          numTurno = 1;
+          if (Array.isArray(maxData) && maxData.length > 0 && maxData[0].numero_turno_area) {
+            numTurno = maxData[0].numero_turno_area + 1;
+          }
+        }
+
+        // Si hay motivo especial (ej: Solo Papanicolau), se incluye como prefijo
+        // en el nombre del servicio almacenado para que el doctor lo vea en su cola
+        const nombreConMotivo = motivoExtra ? `[${motivoExtra}] ${nombre}` : nombre;
+
+        const insertObj = {
+          nombre: nombreConMotivo,
+          cedula: cedula,
+          celular: celular,
+          direccion: direccion,
+          especialidad: especialidad,
+          numero_turno_area: numTurno,
+          creado_por: Estado.userName,
+          atendido_por: atendidoPor,
+          estado: estadoStr,
+          sede: Estado.sede
+        };
+
+        if (esCitaProgramada && fechaCita) {
+          insertObj.fecha_cita = new Date(fechaCita).toISOString();
+        }
+
+        // Insertar directamente con __originalFetch para garantizar que la sede quede guardada
+        const insertResp = await window.__originalFetch(
+          SUPABASE_URL + '/rest/v1/pacientes_espera',
+          {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': 'Bearer ' + SUPABASE_KEY,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify(insertObj)
+          }
+        );
+        if (!insertResp.ok) {
+          const errBody = await insertResp.json().catch(() => ({}));
+          throw new Error('Error al guardar: ' + (errBody.message || insertResp.status));
+        }
+      }
+
+      const etiqueta = motivoExtra ? `${seleccion} → ${especialidad}` : especialidad;
+      const tipoMsg = esCitaProgramada ? `📅 Cita agendada para ${new Date(fechaCita).toLocaleString('es-EC')}` : `✅ "${nombre}" → ${etiqueta}`;
+      this.toast(tipoMsg, 'success');
+      document.getElementById('pacienteNameInput').value = '';
+      document.getElementById('pacienteCedula').value = '';
+      document.getElementById('pacienteCelular').value = '';
+      document.getElementById('pacienteDireccion').value = '';
+      document.getElementById('pacienteEspecialidad').value = '';
+      // Reset tipo turno
+      const hoyOpt = document.querySelector('input[name="tipo_turno"][value="hoy"]');
+      if (hoyOpt) hoyOpt.checked = true;
+      const fechaContaner = document.getElementById('fechaCitaContainer');
+      if (fechaContaner) fechaContaner.style.display = 'none';
+
+      if (document.getElementById('cedulaFeedback')) document.getElementById('cedulaFeedback').style.display = 'none';
+      this.cargarHistorialTurnero();
+      this.cargarAgenda();
+
+      // Solo imprimir ticket si es turno de hoy
+      if (!esCitaProgramada) {
+        this.imprimirTicket({
+          nombre: nombre,
+          especialidad: especialidad,
+          numero_turno_area: numTurno
+        });
+      }
+
+    } catch (err) {
+      console.error(err);
+      this.toast('Error al registrar: ' + err.message, 'error');
+    }
+
+    btn.disabled = false;
+    btn.innerText = originalText;
+  },
+
+  imprimirTicket(paciente) {
+    let printArea = document.getElementById('printArea');
+    if (!printArea) {
+      printArea = document.createElement('div');
+      printArea.id = 'printArea';
+      document.body.appendChild(printArea);
+    }
+
+    const turnoText = paciente.numero_turno_area
+      ? `${paciente.especialidad.substring(0, 3).toUpperCase()}-${paciente.numero_turno_area}`
+      : 'EN ESPERA';
+
+    printArea.innerHTML = `
+      <div class="ticket-print">
+        <p>RENOVACIÓN MONTUFAREÑA</p>
+        <p>SISTEMA DE TURNOS</p>
+        <div class="line"></div>
+        <p style="font-size: 14px;"><strong>${paciente.especialidad}</strong></p>
+        <h2>${turnoText}</h2>
+        <div class="line"></div>
+        <p>Paciente:</p>
+        <h1>${paciente.nombre}</h1>
+        <p>Fecha: ${new Date().toLocaleDateString('es-EC')} ${new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}</p>
+        <div class="line"></div>
+        <p>Por favor, espere su llamado</p>
+        <p>en la pantalla pública.</p>
+      </div>
+    `;
+
+    setTimeout(() => {
+      window.print();
+    }, 100);
+  },
+
+  async cargarHistorialTurnero() {
+    const lista = document.getElementById('turneroHistoryList');
+    if (!lista) return;
+    if (!Estado.online || !sb) return;
+
+    try {
+      await this.obtenerInicioBrigada(); // Siempre refrescar brigada antes de cargar
+      console.log('[Historial] Cargando... sede:', Estado.sede, 'desde:', Estado.brigadaDesde);
+      const histResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera' +
+        '?select=nombre,cedula,estado,especialidad,numero_turno_area,creado_por' +
+        '&creado_por=eq.' + encodeURIComponent(Estado.userName) +
+        '&sede=eq.' + encodeURIComponent(Estado.sede) +
+        '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+        '&order=created_at.desc&limit=20',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' }, cache: 'no-store' }
+      );
+      const data = await histResp.json();
+      console.log('[Historial] Resultado:', Array.isArray(data) ? data.length : data, 'registros');
+      if (!histResp.ok) throw new Error(data.message || 'Error al cargar historial');
+
+      lista.innerHTML = '';
+      if (!data || data.length === 0) {
+        lista.innerHTML = `
+          <li>
+            <div class="state-empty">
+              <span class="state-empty-icon">💭</span>
+              <span class="state-empty-text">No has registrado pacientes aún</span>
+            </div>
+          </li>`;
+        return;
+      }
+
+      data.forEach(t => {
+        const turnoLabel = t.numero_turno_area
+          ? `<span class="badge-turno">🎫 ${t.especialidad ? t.especialidad.substring(0, 3).toUpperCase() : ''}-${t.numero_turno_area}</span>`
+          : `<span class="badge-status espera">⏳ En Recepción</span>`;
+
+        lista.innerHTML += `
+          <li class="patient-item">
+            <div class="patient-header">
+              <div>
+                <div class="patient-title">${t.nombre}</div>
+                <div class="patient-subtitle">Cédula: ${t.cedula || 'N/A'}${t.especialidad ? ' &rarr; ' + t.especialidad : ''}</div>
+              </div>
+              <div>${turnoLabel}</div>
+            </div>
+          </li>`;
+      });
+    } catch (err) {
+      console.error('Error historial turnero:', err);
+    }
+  },
+
+  async cargarAgenda(manual = false) {
+    if (manual) this.toast('Actualizando agenda...', 'info');
+    const lista = document.getElementById('agendaList');
+    if (!lista) return;
+    if (!Estado.online || !sb) return;
+
+    try {
+      const { data, error } = await sb.from('pacientes_espera')
+        .select('*')
+        .eq('sede', Estado.sede)
+        .eq('estado', 'programado')
+        .gte('created_at', Estado.brigadaDesde)
+        .order('fecha_cita', { ascending: true });
+      if (error) throw error;
+
+      lista.innerHTML = '';
+      if (!data || data.length === 0) {
+        lista.innerHTML = `
+          <li>
+            <div class="state-empty">
+              <span class="state-empty-icon">📅</span>
+              <span class="state-empty-text">No hay citas programadas</span>
+            </div>
+          </li>`;
+        return;
+      }
+
+      data.forEach(cita => {
+        const fechaFormato = cita.fecha_cita
+          ? new Date(cita.fecha_cita).toLocaleString('es-EC', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+          : 'Sin fecha';
+
+        const ahora = new Date();
+        const fechaCita = new Date(cita.fecha_cita);
+        const esPasada = fechaCita < ahora;
+        const esPronto = !esPasada && (fechaCita - ahora) < 3600000; // Menos de 1 hora
+
+        let estadoColor = esPasada ? 'var(--danger)' : (esPronto ? '#f59e0b' : 'var(--text-muted)');
+
+        lista.innerHTML += `
+          <li class="patient-item">
+            <div class="patient-header">
+              <div>
+                <div class="patient-title">${cita.nombre}</div>
+                <div class="patient-subtitle">Cédula: ${cita.cedula || 'N/A'} | ${cita.especialidad}</div>
+                <div style="font-size: 0.85rem; font-weight: 700; color: ${estadoColor}; margin-top: 4px;">
+                  📅 ${fechaFormato}${esPasada ? ' — Cita Vencida' : (esPronto ? ' — ¡Próximamente!' : '')}
+                </div>
+              </div>
+              <div class="patient-actions">
+                <button class="btn-action" style="background: var(--success);" onclick="app.confirmarCita('${cita.id}', '${cita.nombre}')">
+                  ✅ Llegó — Enviar a Espera
+                </button>
+                <button class="btn-action" style="background: var(--danger);" onclick="app.cancelarCita('${cita.id}')">
+                  🗑️ Cancelar
+                </button>
+              </div>
+            </div>
+          </li>`;
+      });
+    } catch (err) {
+      console.error('Error agenda:', err);
+      lista.innerHTML = `<li class="patient-item" style="text-align:center;color:red;">Error al cargar la agenda: ${err.message}</li>`;
+    }
+  },
+
+  async confirmarCita(citaId, nombre) {
+    if (!Estado.online || !sb) return;
+    try {
+      // Calcular turno en la especialidad
+      const { data: citaData, error: citaErr } = await sb.from('pacientes_espera')
+        .select('*').eq('id', citaId).limit(1);
+      if (citaErr || !citaData || citaData.length === 0) throw new Error('No se encontró la cita');
+
+      const cita = citaData[0];
+
+      const { data: maxData } = await sb.from('pacientes_espera')
+        .select('numero_turno_area')
+        .eq('especialidad', cita.especialidad)
+        .not('numero_turno_area', 'is', null)
+        .order('numero_turno_area', { ascending: false })
+        .limit(1);
+
+      let numTurno = 1;
+      if (maxData && maxData.length > 0 && maxData[0].numero_turno_area) {
+        numTurno = maxData[0].numero_turno_area + 1;
+      }
+
+      const { error } = await sb.from('pacientes_espera')
+        .update({ estado: 'en_espera', numero_turno_area: numTurno })
+        .eq('id', citaId);
+      if (error) throw error;
+
+      this.toast(`✅ "${nombre}" enviado a sala de espera. Turno #${numTurno}`, 'success');
+      this.cargarAgenda();
+      this.imprimirTicket({ nombre: cita.nombre, especialidad: cita.especialidad, numero_turno_area: numTurno });
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al confirmar cita: ' + e.message, 'error');
+    }
+  },
+
+  async cancelarCita(citaId) {
+    if (!confirm('¿Estás seguro de cancelar esta cita?')) return;
+    if (!Estado.online || !sb) return;
+    try {
+      const { data: currentCita } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', citaId).single();
+      let sv = {};
+      if (currentCita && currentCita.signos_vitales) {
+        try { sv = JSON.parse(currentCita.signos_vitales); } catch(e){}
+      }
+      sv.cancelado_por = Estado.userName;
+      sv.motivo_cancelacion = "Cita cancelada desde agenda";
+
+      const { error } = await sb.from('pacientes_espera')
+        .update({ estado: 'cancelado', signos_vitales: JSON.stringify(sv) })
+        .eq('id', citaId);
+      if (error) throw error;
+      this.toast('🗑️ Cita cancelada', 'success');
+      this.cargarAgenda();
+    } catch (e) {
+      this.toast('Error al cancelar: ' + e.message, 'error');
+    }
+  },
+
+  // ============================================================
+  // ROL: ENFERMERA (Triaje y Signos Vitales)
+  // ============================================================
+
+  async cargarPacientesTriaje(manual = false) {
+    if (manual) this.toast('Actualizando lista de espera...', 'info');
+    const listEl = document.getElementById('triajeList');
+    if (!listEl) return;
+    // Solo mostramos "Cargando..." si la lista está vacía (evita el parpadeo cuando se actualiza sola)
+    if (listEl.innerHTML.trim() === '') {
+      listEl.innerHTML = '<li class="patient-item" style="text-align:center;color:#666;">Cargando...</li>';
+    }
+    if (!Estado.online || !sb) {
+      listEl.innerHTML = '<li class="patient-item" style="text-align:center;color:orange;">Sin conexión a Supabase.</li>';
+      return;
+    }
+
+    try {
+      // Pacientes "en_espera" o "en_triaje" de la brigada activa y sede
+      await this.obtenerInicioBrigada();
+      console.log('[Triaje] Cargando... sede:', Estado.sede, 'desde:', Estado.brigadaDesde);
+      const triajeResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=*' +
+        '&estado=in.(en_espera,en_triaje)' +
+        '&sede=eq.' + encodeURIComponent(Estado.sede) +
+        '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+        '&order=created_at.asc',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' }, cache: 'no-store' }
+      );
+      const data = await triajeResp.json();
+      console.log('[Triaje] Resultado:', Array.isArray(data) ? data.length : data, 'registros');
+      const error = triajeResp.ok ? null : data;
+
+      const numEl = document.getElementById('currentTriajeNumber');
+      const nameEl = document.getElementById('currentTriajeName');
+
+      let newHTML = '';
+
+      if (!data || data.length === 0) {
+        newHTML = '<li class="patient-item" style="text-align:center;color:#666;padding:1rem;">No hay pacientes en recepción.</li>';
+        if (numEl) numEl.innerText = '--';
+        if (nameEl) nameEl.innerText = 'Sin pacientes en espera';
+      } else {
+        if (numEl) numEl.innerText = data.length + ' en espera';
+        if (nameEl) nameEl.innerText = 'Próximo: ' + data[0].nombre;
+
+        data.forEach(t => {
+          newHTML += `
+            <li class="patient-item">
+              <div class="patient-header" style="margin-bottom:0;">
+                <div>
+                  <div class="patient-title">${t.numero_turno_area ? `Turno ${(t.especialidad || '').substring(0, 3).toUpperCase()}-${t.numero_turno_area}` : `<span style="color:#f59e0b; font-size: 0.9rem;">Turno por asignar</span>`} — ${t.nombre}</div>
+                  <div class="patient-subtitle">Cédula: ${t.cedula || 'N/A'} | Tel: ${t.celular || 'N/A'}</div>
+                  <div class="patient-subtitle">Dirección: ${t.direccion || 'N/A'}</div>
+                  <div class="patient-subtitle" style="margin-top:.3rem;">
+                    🏥 Área: <strong style="color:var(--primary);">${t.especialidad || 'Sin asignar'}</strong>
+                  </div>
+                </div>
+                <div class="patient-actions" style="display:flex; gap:0.5rem; flex-wrap:wrap; justify-content:flex-end;">
+                  ${t.estado === 'en_espera' ? `<button class="btn-action btn-call" onclick="app.llamarATriaje('${t.id}')">📢 Llamar a TV</button>` : ''}
+                  ${t.estado === 'en_triaje' ? `<button class="btn-action btn-call" onclick="app.volverALlamarTriaje('${t.id}')" style="background:var(--primary);">🔔 Re-llamar</button>` : ''}
+                  <button class="btn-action" style="background:var(--success);" onclick="app.abrirFormularioTriaje('${t.id}', '${(t.nombre || '').replace(/'/g, "\\'")}')">
+                    🩺 Tomar Signos
+                  </button>
+                  <button class="btn-action" style="background:var(--danger); padding:0.5rem 0.8rem;" onclick="app.marcarAusente('${t.id}', 'triaje')" title="Paciente No se Presentó">🚫 Ausente</button>
+                </div>
+              </div>
+            </li>`;
+        });
+      }
+
+      if (listEl.innerHTML !== newHTML) {
+        listEl.innerHTML = newHTML;
+        this.filtrarTriaje();
+      }
+
+    } catch (e) {
+      console.error(e);
+      listEl.innerHTML = '<li class="patient-item" style="text-align:center;color:red;">Error: ' + e.message + '</li>';
+    }
+  },
+
+  filtrarTriaje() {
+    const input = document.getElementById('inputFiltroTriaje');
+    if (!input) return;
+    const filter = input.value.toLowerCase();
+    const items = document.querySelectorAll('#triajeList .patient-item');
+
+    items.forEach(item => {
+      // Evitar esconder los mensajes del sistema si están solos
+      if (item.innerText.includes('Cargando...') || item.innerText.includes('No hay pacientes')) return;
+
+      const text = item.innerText.toLowerCase();
+      item.style.display = text.includes(filter) ? '' : 'none';
+    });
+  },
+
+  async llamarATriaje(pacienteId) {
+    if (!Estado.online || !sb) return;
+    try {
+      const { data } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', pacienteId).single();
+      let sv = {};
+      try { sv = JSON.parse((data?.signos_vitales) || '{}'); } catch (e) { }
+      sv.llamados = (sv.llamados || 0) + 1;
+
+      // Cambiar estado a en_triaje Y actualizar contador para disparar TV
+      const { error } = await sb.from('pacientes_espera')
+        .update({ estado: 'en_triaje', signos_vitales: JSON.stringify(sv) })
+        .eq('id', pacienteId);
+      if (error) throw error;
+      this.toast('📢 Llamando en TV...', 'success');
+      await this.cargarPacientesTriaje();
+    } catch (e) {
+      this.toast('Error al llamar', 'error');
+    }
+  },
+
+  async volverALlamarTriaje(pacienteId) {
+    if (!Estado.online || !sb) return;
+    try {
+      const { data } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', pacienteId).single();
+      if (!data) return;
+
+      let sv = {};
+      try { sv = JSON.parse(data.signos_vitales || '{}'); } catch (e) { }
+      sv.llamados = (sv.llamados || 1) + 1; 
+
+      const { error } = await sb.from('pacientes_espera')
+        .update({ signos_vitales: JSON.stringify(sv) })
+        .eq('id', pacienteId);
+      if (error) throw error;
+
+      this.toast('🔔 Volviendo a llamar en TV...', 'success');
+    } catch (e) {
+      this.toast('Error al re-llamar', 'error');
+    }
+  },
+
+  async abrirFormularioTriaje(pacienteId, nombrePaciente) {
+    document.getElementById('triajeTurnoId').value = pacienteId;
+    document.getElementById('triajePacienteName').innerText = 'Paciente: ' + nombrePaciente;
+    ['triajeEdad', 'triajePeso', 'triajeEstatura', 'triajePresion',
+      'triajeTemperatura', 'triajeFrecuencia', 'triajeSaturacion'
+    ].forEach(id => { document.getElementById(id).value = ''; });
+    this.mostrarVista('formTriaje');
+
+    // Marcar inmediatamente como en_triaje para que aparezca en "Estado de Turnos"
+    if (Estado.online && sb) {
+      await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?id=eq.' + encodeURIComponent(pacienteId) + '&estado=neq.en_triaje',
+        {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({ estado: 'en_triaje', sede: Estado.sede })
+        }
+      ).catch(e => console.error('Error marcando en_triaje:', e));
+    }
+  },
+
+  async guardarTriaje() {
+    const pacienteId = document.getElementById('triajeTurnoId').value;
+    const btn = document.getElementById('btnGuardarTriaje');
+    btn.disabled = true;
+    btn.innerText = 'Guardando...';
+
+    const signosVitales = {
+      edad: document.getElementById('triajeEdad').value,
+      peso: document.getElementById('triajePeso').value,
+      estatura: document.getElementById('triajeEstatura').value,
+      presion: document.getElementById('triajePresion').value,
+      temperatura: document.getElementById('triajeTemperatura').value,
+      frecuencia: document.getElementById('triajeFrecuencia').value,
+      saturacion: document.getElementById('triajeSaturacion').value,
+      triaje_at: new Date().toISOString()  // timestamp para ordenar en Estado de Turnos
+    };
+
+    try {
+      // Leer la especialidad que ya trae el paciente (asignada por el Turnero)
+      const { data: pacData } = await sb.from('pacientes_espera')
+        .select('especialidad, numero_turno_area')
+        .eq('id', pacienteId)
+        .single();
+
+      const especialidad = pacData?.especialidad;
+      if (!especialidad) {
+        this.toast('Este paciente no tiene especialidad asignada. Contacta a recepción.', 'error');
+        btn.disabled = false; btn.innerText = 'Guardar Signos Vitales';
+        return;
+      }
+
+      let numTurno = pacData?.numero_turno_area;
+
+      if (!numTurno) {
+        // Calcular el siguiente número de turno para esa especialidad si es un paciente antiguo
+        const maxTriajeResp = await window.__originalFetch(
+          SUPABASE_URL + '/rest/v1/pacientes_espera?select=numero_turno_area' +
+          '&especialidad=eq.' + encodeURIComponent(especialidad) +
+          '&sede=eq.' + encodeURIComponent(Estado.sede) +
+          '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+          '&numero_turno_area=not.is.null' +
+          '&order=numero_turno_area.desc&limit=1',
+          { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+        );
+        const maxDataTriaje = await maxTriajeResp.json();
+
+        numTurno = 1;
+        if (Array.isArray(maxDataTriaje) && maxDataTriaje.length > 0 && maxDataTriaje[0].numero_turno_area) {
+          numTurno = maxDataTriaje[0].numero_turno_area + 1;
+        }
+      }
+
+      // Actualizar el registro con signos vitales y estado usando fetch directo
+      const updateResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?id=eq.' + encodeURIComponent(pacienteId),
+        {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({
+            numero_turno_area: numTurno,
+            estado: 'pendiente',
+            atendido_por: Estado.userName,
+            signos_vitales: JSON.stringify(signosVitales),
+            sede: Estado.sede
+          })
+        }
+      );
+      if (!updateResp.ok) {
+        const errBody = await updateResp.json().catch(() => ({}));
+        throw new Error('Error al actualizar: ' + (errBody.message || updateResp.status));
+      }
+
+      const prefijo = especialidad.substring(0, 3).toUpperCase();
+      this.toast(`Turno ${prefijo}-${numTurno} asignado → ${especialidad}`, 'success');
+      this.mostrarVista('triaje');
+      this.cargarPacientesTriaje();
+
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al guardar: ' + e.message, 'error');
+    }
+
+    btn.disabled = false;
+    btn.innerText = 'Guardar Signos Vitales';
+  },
+
+  // ============================================================
+  // ROL: DOCTOR / ÁREA (ve solo su cola con turnos asignados)
+  // ============================================================
+
+  async cargarPacientesArea(manual = false) {
+    if (manual) this.toast('Actualizando pacientes...', 'info');
+    const listEl = document.getElementById('patientList');
+    if (!listEl) return;
+    // Solo mostramos "Cargando..." si la lista está vacía (evita el parpadeo)
+    if (listEl.innerHTML.trim() === '') {
+      listEl.innerHTML = '<li class="patient-item" style="text-align:center;color:#666;">Cargando...</li>';
+    }
+    if (!Estado.online || !sb) return;
+
+    try {
+      // Pacientes de esta especialidad, misma sede, brigada activa
+      await this.obtenerInicioBrigada();
+      console.log('[Area] Cargando... sede:', Estado.sede, 'area:', Estado.areaId, 'desde:', Estado.brigadaDesde);
+      const areaResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=*' +
+        '&especialidad=eq.' + encodeURIComponent(Estado.areaId) +
+        '&estado=in.(en_espera,pendiente,en_consulta)' +
+        '&sede=eq.' + encodeURIComponent(Estado.sede) +
+        '&created_at=gte.' + encodeURIComponent(Estado.brigadaDesde) +
+        '&order=created_at.asc',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' }, cache: 'no-store' }
+      );
+      const turnos = await areaResp.json();
+      console.log('[Area] Resultado:', Array.isArray(turnos) ? turnos.length : turnos, 'pacientes');
+      const error = areaResp.ok ? null : turnos;
+      Estado.turnosArea = turnos; // Guardar localmente para abrir la consulta
+
+      const numEl = document.getElementById('currentPatientNumber');
+      const nameEl = document.getElementById('currentPatientName');
+
+      let newHTML = '';
+
+      if (!turnos || turnos.length === 0) {
+        newHTML = '<li class="patient-item" style="text-align:center;color:#666;padding:1rem;">No hay pacientes en cola para esta área.</li>';
+        if (numEl) numEl.innerText = '--';
+        if (nameEl) nameEl.innerText = 'Cola vacía';
+      } else {
+        const enConsulta = turnos.find(t => t.estado === 'en_consulta');
+        // El próximo a llamar debe ser el primero que esté 'pendiente', no el que está 'en_espera'
+        const proximo = enConsulta || turnos.find(t => t.estado === 'pendiente') || turnos[0];
+
+        if (numEl) numEl.innerText = proximo.numero_turno_area ? Estado.areaId.substring(0, 3).toUpperCase() + '-' + proximo.numero_turno_area : 'Por asignar';
+        if (nameEl) {
+          nameEl.innerText = proximo.nombre;
+          if (enConsulta) nameEl.innerHTML += '<br><span style="font-size:.8rem;background:rgba(255,255,255,.25);padding:2px 10px;border-radius:12px;display:inline-block;margin-top:6px;">EN CONSULTA</span>';
+        }
+
+        turnos.forEach(t => {
+          const ec = t.estado === 'en_consulta';
+          const enEspera = t.estado === 'en_espera';
+          let btns = '';
+          if (t.estado === 'pendiente') {
+            btns = `
+              <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                <button class="btn-action btn-call" onclick="app.cambiarEstado('${t.id}','en_consulta')">📢 Llamar</button>
+                <button class="btn-action" style="background:var(--danger); padding:0.5rem 0.8rem;" onclick="app.marcarAusente('${t.id}', 'doctor')" title="Paciente No se Presentó">🚫 Ausente</button>
+              </div>`;
+          }
+          if (t.estado === 'en_consulta') {
+            btns = `
+              <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button class="btn-action" style="background: var(--primary); padding: 0.5rem 0.8rem;" onclick="app.volverALlamar('${t.id}')" title="Hacer sonar la TV nuevamente">🔔 Re-Llamar</button>
+                <button class="btn-action btn-done" onclick="app.abrirConsulta('${t.id}')" style="background:var(--success); padding: 0.5rem 0.8rem;">👨‍⚕️ Consulta</button>
+                <button class="btn-action" style="background:var(--danger); padding:0.5rem 0.8rem;" onclick="app.marcarAusente('${t.id}', 'doctor')" title="Paciente No se Presentó">🚫 Ausente</button>
+              </div>
+            `;
+          }
+          if (t.estado === 'en_espera') {
+            btns = `<span style="color: #f59e0b; font-weight: bold; font-size: 0.9rem; background: #fef3c7; padding: 4px 8px; border-radius: 6px;">⏳ En Signos Vitales</span>`;
+          }
+
+          let sv = {};
+          try { sv = JSON.parse(t.signos_vitales || '{}'); } catch (e) { }
+
+          newHTML += `
+            <li class="patient-item ${ec ? 'en-consulta' : ''}">
+              <div class="patient-header">
+                <div>
+                  <div class="patient-title">${t.numero_turno_area ? `Turno ${Estado.areaId.substring(0, 3).toUpperCase()}-${t.numero_turno_area}` : `<span style="color:#f59e0b; font-size: 0.9rem;">Turno por asignar</span>`} — ${t.nombre}</div>
+                  <div class="patient-subtitle">Cédula: ${t.cedula || 'N/A'} | Tel: ${t.celular || 'N/A'} | Triaje: ${t.atendido_por || 'N/A'}</div>
+                </div>
+                <div class="patient-actions">${btns}</div>
+              </div>
+              <div class="patient-data-grid">
+                <div class="data-item"><span>Dirección</span><span>${t.direccion || 'N/A'}</span></div>
+                <div class="data-item"><span>Edad</span><span>${sv.edad ? sv.edad + ' años' : 'N/A'}</span></div>
+                <div class="data-item"><span>Peso</span><span>${sv.peso || 'N/A'}</span></div>
+                <div class="data-item"><span>Estatura</span><span>${sv.estatura || 'N/A'}</span></div>
+                <div class="data-item"><span>Presión</span><span>${sv.presion || 'N/A'}</span></div>
+                <div class="data-item"><span>Temperatura</span><span>${sv.temperatura || 'N/A'}</span></div>
+                <div class="data-item"><span>Frec. Cardíaca</span><span>${sv.frecuencia || 'N/A'}</span></div>
+                <div class="data-item"><span>Saturación O₂</span><span>${sv.saturacion || 'N/A'}</span></div>
+              </div>
+            </li>`;
+        });
+      }
+
+      if (listEl.innerHTML !== newHTML) {
+        listEl.innerHTML = newHTML;
+        this.filtrarDoctor();
+      }
+    } catch (e) {
+      console.error(e);
+      listEl.innerHTML = '<li class="patient-item" style="text-align:center;color:red;">Error: ' + e.message + '</li>';
+    }
+  },
+
+  async cambiarEstado(pacienteId, nuevoEstado) {
+    if (!Estado.online || !sb) return;
+    try {
+      const { error } = await sb.from('pacientes_espera')
+        .update({ estado: nuevoEstado })
+        .eq('id', pacienteId);
+      if (error) throw error;
+    } catch (e) {
+      this.toast('Error al actualizar estado', 'error');
+      return;
+    }
+    if (nuevoEstado === 'en_consulta') this.toast('Paciente llamado', 'success');
+    await this.cargarPacientesArea();
+  },
+
+  async volverALlamar(pacienteId) {
+    if (!Estado.online || !sb) return;
+    const paciente = Estado.turnosArea?.find(p => p.id === pacienteId);
+    if (!paciente) return;
+
+    let sv = {};
+    try { sv = JSON.parse(paciente.signos_vitales || '{}'); } catch (e) { }
+    sv.llamados = (sv.llamados || 1) + 1; // Incrementar contador de llamadas
+
+    try {
+      const { error } = await sb.from('pacientes_espera')
+        .update({ signos_vitales: JSON.stringify(sv) })
+        .eq('id', pacienteId);
+      if (error) throw error;
+
+      this.toast('🔔 Volviendo a llamar en TV...', 'success');
+    } catch (e) {
+      this.toast('Error al re-llamar', 'error');
+    }
+  },
+
+  marcarAusente(pacienteId, rol) {
+    const modal = document.createElement('div');
+    modal.id = 'modalAusente';
+    modal.style.cssText = `
+      position:fixed;inset:0;z-index:9999;
+      display:flex;align-items:center;justify-content:center;
+      padding:1rem;background:rgba(10,15,30,0.65);
+      backdrop-filter:blur(8px);animation:fadeIn .2s ease;
+    `;
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:20px;width:100%;max-width:400px;box-shadow:0 24px 64px rgba(0,0,0,0.25);overflow:hidden;animation:slideUp .3s cubic-bezier(.16,1,.3,1);font-family:'Outfit',sans-serif;">
+        <div style="background:#ef4444;padding:1.5rem;display:flex;align-items:center;gap:1rem;">
+          <div style="font-size:2.5rem;color:white;line-height:1;">⚠️</div>
+          <div style="flex:1;">
+            <div style="color:#fff;font-size:1.25rem;font-weight:800;">Paciente Ausente</div>
+            <div style="color:rgba(255,255,255,.9);font-size:.85rem;">¿Qué deseas hacer con el turno?</div>
+          </div>
+        </div>
+        <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+          <button onclick="app._procesarAusente('${pacienteId}', '${rol}', 'cancelar')" style="padding:1rem;background:#fef2f2;border:2px solid #fecaca;border-radius:12px;color:#dc2626;font-weight:700;font-size:1rem;cursor:pointer;transition:all .2s;text-align:left;display:flex;align-items:center;gap:0.75rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='#fef2f2'">
+            <span style="font-size:1.25rem;">❌</span>
+            <div>
+              <div style="font-weight:800;font-size:1rem;">Dar de Baja</div>
+              <div style="font-size:0.75rem;font-weight:500;opacity:0.8;">Eliminar de la lista de espera</div>
+            </div>
+          </button>
+          <button onclick="app._procesarAusente('${pacienteId}', '${rol}', 'reencolar')" style="padding:1rem;background:#f0fdf4;border:2px solid #bbf7d0;border-radius:12px;color:#16a34a;font-weight:700;font-size:1rem;cursor:pointer;transition:all .2s;text-align:left;display:flex;align-items:center;gap:0.75rem;" onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
+            <span style="font-size:1.25rem;">🔄</span>
+            <div>
+              <div style="font-weight:800;font-size:1rem;">Reasignar Turno</div>
+              <div style="font-size:0.75rem;font-weight:500;opacity:0.8;">Mover al final de la cola actual</div>
+            </div>
+          </button>
+          <button onclick="document.getElementById('modalAusente').remove()" style="padding:0.75rem;background:#f1f5f9;border:none;border-radius:12px;color:#64748b;font-weight:600;font-size:.9rem;cursor:pointer;margin-top:0.5rem;">Cancelar / Volver</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  },
+
+  async _procesarAusente(pacienteId, rol, accion) {
+    const modal = document.getElementById('modalAusente');
+    if (modal) modal.remove();
+    if (!Estado.online || !sb) return;
+
+    try {
+      if (accion === 'cancelar') {
+        const { data: currentP } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', pacienteId).single();
+        let sv = {};
+        if (currentP && currentP.signos_vitales) {
+          try { sv = JSON.parse(currentP.signos_vitales); } catch(e){}
+        }
+        sv.cancelado_por = Estado.userName;
+        sv.motivo_cancelacion = "Paciente dado de baja / Ausente";
+
+        const { error } = await sb.from('pacientes_espera')
+          .update({ estado: 'cancelado', signos_vitales: JSON.stringify(sv) })
+          .eq('id', pacienteId);
+        if (error) throw error;
+        this.toast('Paciente dado de baja (Ausente)', 'success');
+      } else if (accion === 'reencolar') {
+        let updateData = {
+          created_at: new Date().toISOString()
+        };
+
+        if (rol === 'triaje') {
+          updateData.estado = 'en_espera';
+        } else {
+          updateData.estado = 'pendiente';
+        }
+
+        // Siempre generar el SIGUIENTE número de turno para no mantener el viejo
+        const { data: pData } = await sb.from('pacientes_espera').select('especialidad').eq('id', pacienteId).single();
+        if (pData && pData.especialidad) {
+          const { data: maxData } = await sb.from('pacientes_espera')
+            .select('numero_turno_area')
+            .eq('especialidad', pData.especialidad)
+            .gte('created_at', Estado.brigadaDesde)
+            .not('numero_turno_area', 'is', null)
+            .order('numero_turno_area', { ascending: false })
+            .limit(1);
+
+          let numTurno = 1;
+          if (maxData && maxData.length > 0 && maxData[0].numero_turno_area) {
+            numTurno = maxData[0].numero_turno_area + 1;
+          }
+          updateData.numero_turno_area = numTurno;
+        }
+
+        const { error } = await sb.from('pacientes_espera').update(updateData).eq('id', pacienteId);
+        if (error) throw error;
+        this.toast('Paciente enviado al final de la cola con nuevo turno', 'success');
+      }
+
+      if (rol === 'triaje') this.cargarPacientesTriaje();
+      else this.cargarPacientesArea();
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al actualizar paciente', 'error');
+    }
+  },
+
+  filtrarDoctor() {
+    const input = document.getElementById('inputFiltroDoctor');
+    if (!input) return;
+    const filter = input.value.toLowerCase();
+    const items = document.querySelectorAll('#patientList .patient-item');
+
+    items.forEach(item => {
+      if (item.innerText.includes('Cargando...') || item.innerText.includes('No hay pacientes')) return;
+      const text = item.innerText.toLowerCase();
+      item.style.display = text.includes(filter) ? '' : 'none';
+    });
+  },
+
+  abrirConsulta(pacienteId) {
+    if (!Estado.turnosArea) return;
+    const paciente = Estado.turnosArea.find(p => p.id === pacienteId);
+    if (!paciente) return;
+
+    // Reset visual state
+    const formContent = document.getElementById('formConsultaContent');
+    const successScreen = document.getElementById('formConsultaSuccess');
+    if (formContent) formContent.style.display = 'block';
+    if (successScreen) successScreen.style.display = 'none';
+
+    document.getElementById('consultaTurnoId').value = paciente.id;
+    document.getElementById('consultaPacienteName').innerText = 'Paciente: ' + paciente.nombre;
+
+    const isFarmacia = Estado.areaId === 'Farmacia';
+
+    const fControls = document.getElementById('farmaciaControls');
+    if (fControls) fControls.style.display = isFarmacia ? 'block' : 'none';
+    const fNotas = document.getElementById('farmaciaNotas');
+    if (fNotas) fNotas.value = '';
+
+    // Bloquear edición si es Farmacia
+    const camposFormulario = [
+      'consNombre', 'consCedula', 'consCelular', 'consDireccion',
+      'consEdad', 'consPeso', 'consEstatura', 'consPresion',
+      'consTemperatura', 'consFrecuencia', 'consSaturacion',
+      'consDiagnostico', 'consReceta'
+    ];
+    camposFormulario.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.readOnly = isFarmacia;
+        if (isFarmacia) el.style.backgroundColor = 'rgba(0,0,0,0.02)';
+        else el.style.backgroundColor = '';
+      }
+    });
+
+    const divDerivacion = document.getElementById('divDerivacionContainer');
+    const selectDerivacion = document.getElementById('consDerivacion');
+    // Especialidades que NO pueden derivar a Cirujano
+    const NO_DERIVAN_CIRUJANO = ['Psicología Clínica', 'Odontología', 'Corte de Cabello'];
+    if (divDerivacion && selectDerivacion) {
+      selectDerivacion.innerHTML = '<option value="">-- No Derivar --</option>';
+      let hayOpciones = false;
+      // Derivaciones específicas por especialidad
+      if (Estado.areaId === 'Traumatología') {
+        selectDerivacion.innerHTML += '<option value="Fisioterapia">Derivar a Fisioterapia</option>';
+        hayOpciones = true;
+      } else if (Estado.areaId === 'Medicina General') {
+        selectDerivacion.innerHTML += '<option value="Imagenología">Derivar a Imagenología</option>';
+        hayOpciones = true;
+      } else if (Estado.areaId === 'Papanicolaou') {
+        selectDerivacion.innerHTML += '<option value="Obstetricia">Derivar a Obstetricia</option>';
+        hayOpciones = true;
+      }
+      // Derivar a Cirujano: permitido en todas excepto Psicología Clínica, Odontología y Corte de Cabello
+      // (tampoco se deriva a sí mismo)
+      if (!NO_DERIVAN_CIRUJANO.includes(Estado.areaId) && Estado.areaId !== 'Cirujano') {
+        selectDerivacion.innerHTML += '<option value="Cirujano">Derivar a Cirujano</option>';
+        hayOpciones = true;
+      }
+      divDerivacion.style.display = hayOpciones ? 'block' : 'none';
+    }
+
+    const btnGuardar = document.getElementById('btnGuardarConsulta');
+    if (btnGuardar) {
+      if (isFarmacia) {
+        btnGuardar.innerText = '✅ Marcar Medicinas Entregadas';
+      } else {
+        btnGuardar.innerText = '✅ Finalizar Consulta';
+      }
+    }
+
+    document.getElementById('consNombre').value = paciente.nombre || '';
+    document.getElementById('consCedula').value = paciente.cedula || '';
+    document.getElementById('consCelular').value = paciente.celular || '';
+    document.getElementById('consDireccion').value = paciente.direccion || '';
+
+    let sv = {};
+    try { sv = JSON.parse(paciente.signos_vitales || '{}'); } catch (e) { }
+
+    document.getElementById('consEdad').value = sv.edad || '';
+    document.getElementById('consPeso').value = sv.peso || '';
+    document.getElementById('consEstatura').value = sv.estatura || '';
+    document.getElementById('consPresion').value = sv.presion || '';
+    document.getElementById('consTemperatura').value = sv.temperatura || '';
+    document.getElementById('consFrecuencia').value = sv.frecuencia || '';
+    document.getElementById('consSaturacion').value = sv.saturacion || '';
+
+    document.getElementById('consDiagnostico').value = sv.diagnostico || '';
+    document.getElementById('consReceta').value = sv.receta || '';
+
+    this.mostrarVista('formConsulta');
+  },
+
+  async guardarConsulta() {
+    const pacienteId = document.getElementById('consultaTurnoId').value;
+    const btn = document.getElementById('btnGuardarConsulta');
+    btn.disabled = true;
+    btn.innerText = 'Guardando...';
+
+    const paciente = Estado.turnosArea.find(p => p.id === pacienteId);
+    if (!paciente) {
+      this.toast('Error: Paciente no encontrado', 'error');
+      btn.disabled = false; btn.innerText = '✅ Finalizar Consulta';
+      return;
+    }
+
+    let sv = {};
+    try { sv = JSON.parse(paciente.signos_vitales || '{}'); } catch (e) { }
+
+    sv.edad = document.getElementById('consEdad').value;
+    sv.peso = document.getElementById('consPeso').value;
+    sv.estatura = document.getElementById('consEstatura').value;
+    sv.presion = document.getElementById('consPresion').value;
+    sv.temperatura = document.getElementById('consTemperatura').value;
+    sv.frecuencia = document.getElementById('consFrecuencia').value;
+    sv.saturacion = document.getElementById('consSaturacion').value;
+
+    sv.diagnostico = document.getElementById('consDiagnostico').value.trim();
+    const recetaTexto = document.getElementById('consReceta').value.trim();
+
+    let codigoReceta = null;
+    const isFarmacia = Estado.areaId === 'Farmacia';
+
+    if (isFarmacia) {
+      const checkedOpt = document.querySelector('input[name="estado_entrega"]:checked');
+      if (checkedOpt) sv.farmacia_entrega = checkedOpt.value;
+      const fNotas = document.getElementById('farmaciaNotas');
+      if (fNotas) sv.farmacia_notas = fNotas.value.trim();
+    }
+
+    // Solo los doctores (no Farmacia) pueden generar nuevas recetas y enviar a Farmacia
+    if (recetaTexto && !isFarmacia) {
+      // Generar código único de receta de SOLO 4 NÚMEROS (Ej: 4921)
+      codigoReceta = Math.floor(1000 + Math.random() * 9000).toString();
+      sv.receta = recetaTexto;
+      sv.codigo_receta = codigoReceta;
+    }
+
+    try {
+      const svJson = JSON.stringify(sv);
+      const nombreFinal = document.getElementById('consNombre').value.trim();
+      const cedulaFinal = document.getElementById('consCedula').value.trim();
+      const celularFinal = document.getElementById('consCelular').value.trim();
+      const direccionFinal = document.getElementById('consDireccion').value.trim();
+
+      const { error } = await sb.from('pacientes_espera')
+        .update({ signos_vitales: svJson })
+        .eq('id', pacienteId);
+
+      if (error) throw error;
+
+      const derivacionArea = document.getElementById('consDerivacion') ? document.getElementById('consDerivacion').value : '';
+
+      if (derivacionArea) {
+        // Calcular número de turno para la nueva área
+        let numTurno = 1;
+        const { data: maxData } = await sb.from('pacientes_espera')
+          .select('numero_turno_area')
+          .eq('especialidad', derivacionArea)
+          .not('numero_turno_area', 'is', null)
+          .gte('created_at', Estado.brigadaDesde)
+          .order('numero_turno_area', { ascending: false })
+          .limit(1);
+
+        if (maxData && maxData.length > 0 && maxData[0].numero_turno_area) {
+          numTurno = maxData[0].numero_turno_area + 1;
+        }
+
+        // Insertar un NUEVO turno para la especialidad derivada (preserva el historial de la consulta actual)
+        const { error: errDeriv } = await sb.from('pacientes_espera').insert({
+          nombre: nombreFinal,
+          cedula: cedulaFinal,
+          celular: celularFinal,
+          direccion: direccionFinal,
+          especialidad: derivacionArea,
+          numero_turno_area: numTurno,
+          creado_por: Estado.userName,
+          atendido_por: 'Derivado desde ' + Estado.areaId,
+          estado: 'pendiente', // Listo para que el nuevo doctor lo llame
+          signos_vitales: svJson
+        });
+
+        if (errDeriv) throw errDeriv;
+
+        // Marcar la consulta actual como finalizada
+        const { error: errEstado } = await sb.from('pacientes_espera')
+          .update({ estado: 'atendido' })
+          .eq('id', pacienteId);
+        if (errEstado) throw errEstado;
+
+        this.toast(`✅ Paciente derivado exitosamente a ${derivacionArea} (Turno #${numTurno})`, 'success');
+        this.mostrarVista('misPacientes');
+      } else if (recetaTexto && !isFarmacia) {
+        const genCodigo = Math.floor(1000 + Math.random() * 9000).toString();
+        codigoReceta = genCodigo;
+
+        const { data: maxData } = await sb.from('pacientes_espera')
+          .select('numero_turno_area')
+          .eq('especialidad', 'Farmacia')
+          .not('numero_turno_area', 'is', null)
+          .order('numero_turno_area', { ascending: false })
+          .limit(1);
+
+        let numTurnoFarmacia = 1;
+        if (maxData && maxData.length > 0 && maxData[0].numero_turno_area) {
+          numTurnoFarmacia = maxData[0].numero_turno_area + 1;
+        }
+
+        const { error: errFarmacia } = await sb.from('pacientes_espera').insert({
+          nombre: `[Receta: ${codigoReceta}] ${nombreFinal}`,
+          cedula: cedulaFinal,
+          celular: celularFinal,
+          direccion: direccionFinal,
+          especialidad: 'Farmacia',
+          numero_turno_area: numTurnoFarmacia,
+          creado_por: Estado.userName,
+          atendido_por: 'Enviado desde ' + Estado.areaId,
+          estado: 'pendiente',
+          signos_vitales: svJson
+        });
+        if (errFarmacia) throw errFarmacia;
+
+        const { error: errEstado } = await sb.from('pacientes_espera')
+          .update({ estado: 'atendido' })
+          .eq('id', pacienteId);
+        if (errEstado) throw errEstado;
+
+        document.getElementById('formConsultaContent').style.display = 'none';
+        document.getElementById('formConsultaSuccess').style.display = 'block';
+        document.getElementById('consultaCodigoGenerado').innerText = codigoReceta;
+        this.toast(`✅ Consulta finalizada. Receta ${codigoReceta} enviada a Farmacia.`, 'success');
+
+      } else {
+        const { error: errFinal } = await sb.from('pacientes_espera')
+          .update({
+            estado: 'atendido',
+            nombre: nombreFinal,
+            cedula: cedulaFinal,
+            celular: celularFinal,
+            direccion: direccionFinal
+          })
+          .eq('id', pacienteId);
+        if (errFinal) throw errFinal;
+
+        if (isFarmacia) {
+          this.toast('✅ Medicamentos entregados. Turno finalizado.', 'success');
+        } else {
+          this.toast('✅ Consulta finalizada exitosamente.', 'success');
+        }
+        this.mostrarVista('misPacientes');
+      }
+
+      await this.cargarPacientesArea();
+    } catch (e) {
+      console.error(e);
+      this.toast('Error: ' + e.message, 'error');
+    }
+
+    btn.disabled = false;
+    btn.innerText = '✅ Finalizar Consulta';
+  },
+
+  cerrarPantallaExitoConsulta() {
+    this.mostrarVista('misPacientes');
+  },
+
+  descargarRecetaPDF() {
+    const btn = document.querySelector('#formConsultaSuccess button.btn-large');
+    const originalText = btn.innerText;
+    btn.innerText = 'Generando PDF...';
+    btn.disabled = true;
+
+    const pacienteNombre = document.getElementById('consNombre').value.trim();
+    const pacienteCedula = document.getElementById('consCedula').value.trim();
+    const diagnostico = document.getElementById('consDiagnostico').value.trim();
+    const receta = document.getElementById('consReceta').value.trim();
+    const codigo = document.getElementById('consultaCodigoGenerado').innerText;
+    const fecha = new Date().toLocaleDateString('es-EC');
+
+    const div = document.createElement('div');
+    div.style.cssText = 'padding: 40px; font-family: Arial, sans-serif; color: #333; background: #fff; line-height: 1.6; position: absolute; left: -9999px; width: 800px;';
+
+    div.innerHTML = `
+      <div style="text-align: center; border-bottom: 2px solid #0ea5e9; padding-bottom: 20px; margin-bottom: 30px;">
+        <h1 style="color: #0ea5e9; margin: 0; font-size: 28px;">RENOVACIÓN MONTUFAREÑA</h1>
+        <p style="margin: 5px 0 0; font-size: 14px; color: #64748b;">Unidad de Salud y Atención Integral</p>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 30px; font-size: 14px;">
+        <div>
+          <p style="margin: 0;"><strong>Paciente:</strong> ${pacienteNombre}</p>
+          <p style="margin: 5px 0 0;"><strong>Cédula:</strong> ${pacienteCedula}</p>
+        </div>
+        <div style="text-align: right;">
+          <p style="margin: 0;"><strong>Fecha:</strong> ${fecha}</p>
+          <p style="margin: 5px 0 0;"><strong>Código Receta:</strong> <span style="color: #0ea5e9; font-weight: bold;">${codigo}</span></p>
+        </div>
+      </div>
+      ${diagnostico ? `
+      <div style="margin-bottom: 20px;">
+        <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 16px; color: #0ea5e9;">Diagnóstico / Observaciones</h3>
+        <div style="background: #f8fafc; padding: 15px; border-radius: 8px; font-size: 14px; white-space: pre-wrap;">${diagnostico}</div>
+      </div>` : ''}
+      <div>
+        <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 16px; color: #10b981;">Receta Médica (Rp.)</h3>
+        <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; font-size: 14px; white-space: pre-wrap; min-height: 150px;">${receta}</div>
+      </div>
+      <div style="margin-top: 80px; text-align: center;">
+        <div style="border-top: 1px solid #94a3b8; width: 250px; margin: 0 auto; padding-top: 10px;">
+          <p style="margin: 0; font-weight: bold;">Firma del Médico</p>
+          <p style="margin: 0; font-size: 12px; color: #64748b;">${Estado.userName} - ${Estado.areaId}</p>
+        </div>
+      </div>
+      <div style="margin-top: 40px; text-align: center; font-size: 10px; color: #94a3b8;">
+        Documento generado automáticamente por el Sistema de Turnos.
+      </div>
+    `;
+
+    document.body.appendChild(div);
+
+    const opt = {
+      margin: 10,
+      filename: `Receta_${pacienteNombre.replace(/ /g, '_')}_${fecha.replace(/\//g, '-')}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(div).save().then(() => {
+      document.body.removeChild(div);
+      btn.innerText = originalText;
+      btn.disabled = false;
+      this.toast('✅ PDF generado correctamente', 'success');
+    }).catch(e => {
+      console.error(e);
+      document.body.removeChild(div);
+      btn.innerText = originalText;
+      btn.disabled = false;
+      this.toast('Error generando PDF', 'error');
+    });
+  },
+
+  // ---- EXPORTAR EXCEL ----
+  descargarExcel() {
+    // Mostrar modal de selección de especialidad
+    this._mostrarModalExcel();
+  },
+
+  _mostrarModalExcel() {
+    const prev = document.getElementById('modalExcelExport');
+    if (prev) prev.remove();
+
+    const especialidades = ['TODAS LAS ESPECIALIDADES', ...AREAS_ESTATICAS];
+
+    // Construir opciones de especialidad como <option> de un <select>
+    const opcionesEsp = especialidades.map((esp, i) =>
+      `<option value="${esp}">${i === 0 ? '\u2605 ' + esp : esp}</option>`
+    ).join('');
+
+    const modal = document.createElement('div');
+    modal.id = 'modalExcelExport';
+    modal.style.cssText = `
+      position:fixed;inset:0;z-index:9999;
+      display:flex;align-items:center;justify-content:center;
+      padding:1rem;
+      background:rgba(10,15,30,0.65);
+      backdrop-filter:blur(8px);
+      -webkit-backdrop-filter:blur(8px);
+      animation:fadeIn .2s ease;
+    `;
+
+    modal.innerHTML = `
+      <div style="
+        background:#fff;
+        border-radius:20px;
+        width:100%;max-width:480px;
+        box-shadow:0 24px 64px rgba(0,0,0,0.25);
+        overflow:hidden;
+        animation:slideUp .3s cubic-bezier(.16,1,.3,1);
+        font-family:'Outfit',sans-serif;
+      ">
+
+        <!-- Cabecera verde -->
+        <div style="
+          background:linear-gradient(135deg,#10b981,#059669);
+          padding:1.5rem 1.75rem;
+          display:flex;align-items:center;gap:1rem;
+        ">
+          <div style="
+            width:48px;height:48px;
+            background:rgba(255,255,255,0.2);
+            border-radius:12px;
+            display:flex;align-items:center;justify-content:center;
+            font-size:1.5rem;flex-shrink:0;
+          ">📊</div>
+          <div style="flex:1;">
+            <div style="color:#fff;font-size:1.25rem;font-weight:800;letter-spacing:-.02em;">Exportar a Excel</div>
+            <div style="color:rgba(255,255,255,.75);font-size:.85rem;margin-top:2px;">Elige la especialidad y tipo de pacientes</div>
+          </div>
+          <button onclick="app._cerrarModalExcel()" style="
+            background:rgba(255,255,255,.2);border:none;
+            width:32px;height:32px;border-radius:50%;
+            color:#fff;font-size:1rem;cursor:pointer;
+            display:flex;align-items:center;justify-content:center;
+            transition:background .2s;font-family:inherit;
+          " onmouseover="this.style.background='rgba(255,255,255,.35)'" onmouseout="this.style.background='rgba(255,255,255,.2)'">✕</button>
+        </div>
+
+        <!-- Cuerpo -->
+        <div style="padding:1.5rem 1.75rem;display:flex;flex-direction:column;gap:1.25rem;">
+
+          <!-- Periodo de tiempo -->
+          <div>
+            <label style="
+              display:block;font-size:.78rem;font-weight:700;
+              text-transform:uppercase;letter-spacing:.08em;
+              color:#64748b;margin-bottom:.6rem;
+            ">🗓️ Periodo a Exportar</label>
+            <div style="display:flex;gap:1rem;">
+              <label style="flex:1; cursor:pointer; font-size:0.9rem; display:flex; align-items:center; gap:0.5rem; background:#f8fafc; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #e2e8f0; font-weight: 500; color: #334155;">
+                <input type="radio" name="excelPeriodo" value="actual" checked style="accent-color: #10b981; transform: scale(1.2);">
+                Solo Brigada Actual
+              </label>
+              <label style="flex:1; cursor:pointer; font-size:0.9rem; display:flex; align-items:center; gap:0.5rem; background:#f8fafc; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #e2e8f0; font-weight: 500; color: #334155;">
+                <input type="radio" name="excelPeriodo" value="historico" style="accent-color: #10b981; transform: scale(1.2);">
+                Todo el Histórico
+              </label>
+            </div>
+          </div>
+
+          <!-- Especialidad -->
+          <div>
+            <label style="
+              display:block;font-size:.78rem;font-weight:700;
+              text-transform:uppercase;letter-spacing:.08em;
+              color:#64748b;margin-bottom:.5rem;
+            ">🏥 Especialidad</label>
+            <select id="excelSelectEsp" style="
+              width:100%;padding:.75rem 1rem;
+              border:1.5px solid #e2e8f0;border-radius:12px;
+              font-size:.95rem;font-family:'Outfit',sans-serif;
+              color:#0f172a;background:#f8fafc;
+              outline:none;cursor:pointer;
+              transition:border-color .2s;
+            " onfocus="this.style.borderColor='#10b981'" onblur="this.style.borderColor='#e2e8f0'">
+              ${opcionesEsp}
+            </select>
+          </div>
+
+          <!-- Filtro de pacientes -->
+          <div>
+            <label style="
+              display:block;font-size:.78rem;font-weight:700;
+              text-transform:uppercase;letter-spacing:.08em;
+              color:#64748b;margin-bottom:.6rem;
+            ">👥 Pacientes a incluir</label>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;">
+
+              <label id="chip-todos" onclick="app._selChip(this)" style="
+                display:flex;flex-direction:column;align-items:center;gap:.35rem;
+                padding:.85rem .5rem;border-radius:12px;cursor:pointer;
+                border:2px solid #4f46e5;background:#ede9fe;
+                transition:all .2s;text-align:center;
+              ">
+                <input type="radio" name="excelFiltro" value="todos" checked style="display:none">
+                <span style="font-size:1.4rem;">📋</span>
+                <span style="font-size:.75rem;font-weight:700;color:#4338ca;line-height:1.3;">Todos<br><span style="font-weight:500;color:#6d28d9;">(lista + atendidos)</span></span>
+              </label>
+
+              <label id="chip-lista" onclick="app._selChip(this)" style="
+                display:flex;flex-direction:column;align-items:center;gap:.35rem;
+                padding:.85rem .5rem;border-radius:12px;cursor:pointer;
+                border:2px solid #e2e8f0;background:#fff;
+                transition:all .2s;text-align:center;
+              ">
+                <input type="radio" name="excelFiltro" value="lista" style="display:none">
+                <span style="font-size:1.4rem;">⏳</span>
+                <span style="font-size:.75rem;font-weight:700;color:#64748b;line-height:1.3;">Solo lista<br><span style="font-weight:500;">(pendientes)</span></span>
+              </label>
+
+              <label id="chip-atendidos" onclick="app._selChip(this)" style="
+                display:flex;flex-direction:column;align-items:center;gap:.35rem;
+                padding:.85rem .5rem;border-radius:12px;cursor:pointer;
+                border:2px solid #e2e8f0;background:#fff;
+                transition:all .2s;text-align:center;
+              ">
+                <input type="radio" name="excelFiltro" value="atendidos" style="display:none">
+                <span style="font-size:1.4rem;">✅</span>
+                <span style="font-size:.75rem;font-weight:700;color:#64748b;line-height:1.3;">Solo<br><span style="font-weight:500;">atendidos</span></span>
+              </label>
+
+            </div>
+          </div>
+
+          <!-- Botones -->
+          <div style="display:flex;gap:.75rem;padding-top:.5rem;border-top:1px solid #f1f5f9;">
+            <button onclick="app._ejecutarDescargaExcel()" style="
+              flex:1;padding:.85rem 1rem;
+              background:linear-gradient(135deg,#10b981,#059669);
+              color:#fff;border:none;border-radius:12px;
+              font-size:1rem;font-weight:700;font-family:'Outfit',sans-serif;
+              cursor:pointer;transition:all .2s;
+              box-shadow:0 6px 20px rgba(16,185,129,0.35);
+              display:flex;align-items:center;justify-content:center;gap:.5rem;
+            " onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 28px rgba(16,185,129,.45)'" onmouseout="this.style.transform='';this.style.boxShadow='0 6px 20px rgba(16,185,129,.35)'">
+              <span style="font-size:1.1rem;">📥</span> Descargar Excel
+            </button>
+            <button onclick="app._cerrarModalExcel()" style="
+              padding:.85rem 1.25rem;
+              background:#f1f5f9;color:#64748b;
+              border:1.5px solid #e2e8f0;border-radius:12px;
+              font-size:.95rem;font-weight:600;font-family:'Outfit',sans-serif;
+              cursor:pointer;transition:all .2s;
+            " onmouseover="this.style.background='#e2e8f0';this.style.color='#334155'" onmouseout="this.style.background='#f1f5f9';this.style.color='#64748b'">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  },
+
+  _selChip(labelEl) {
+    // Deseleccionar todos los chips
+    ['chip-todos', 'chip-lista', 'chip-atendidos'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.border = '2px solid #e2e8f0';
+      el.style.background = '#fff';
+      const span = el.querySelector('span:last-child');
+      if (span) span.style.color = '#64748b';
+    });
+    // Marcar el seleccionado
+    labelEl.style.border = '2px solid #4f46e5';
+    labelEl.style.background = '#ede9fe';
+    const span = labelEl.querySelector('span:last-child');
+    if (span) span.style.color = '#4338ca';
+    // Marcar el radio
+    const radio = labelEl.querySelector('input[type=radio]');
+    if (radio) radio.checked = true;
+  },
+
+  _cerrarModalExcel() {
+    const modal = document.getElementById('modalExcelExport');
+    if (modal) modal.remove();
+  },
+
+  async _ejecutarDescargaExcel() {
+    if (!Estado.online || !sb) {
+      this.toast('Sin conexión a base de datos', 'error');
+      this._cerrarModalExcel();
+      return;
+    }
+
+    const especialidadSel = document.getElementById('excelSelectEsp')?.value || 'TODAS LAS ESPECIALIDADES';
+    const filtroSel = document.querySelector('input[name="excelFiltro"]:checked')?.value || 'todos';
+    const periodoSel = document.querySelector('input[name="excelPeriodo"]:checked')?.value || 'actual';
+
+    this._cerrarModalExcel();
+    this.toast('⏳ Generando reporte Excel (puede tardar un momento)...', 'success');
+
+    try {
+      let queryBase = sb.from('pacientes_espera').select('*')
+        .eq('sede', Estado.sede)
+        .neq('nombre', '[SISTEMA_NUEVA_BRIGADA_' + Estado.sede + ']');
+
+      if (periodoSel === 'actual') {
+        queryBase = queryBase.gte('created_at', Estado.brigadaDesde);
+      }
+
+      // Filtrar por especialidad
+      if (especialidadSel !== 'TODAS LAS ESPECIALIDADES') {
+        queryBase = queryBase.eq('especialidad', especialidadSel);
+      }
+
+      // Filtrar por estado
+      if (filtroSel === 'lista') {
+        queryBase = queryBase.in('estado', ['en_espera', 'pendiente', 'en_consulta']);
+      } else if (filtroSel === 'atendidos') {
+        queryBase = queryBase.eq('estado', 'atendido');
+      }
+
+      queryBase = queryBase.order('especialidad', { ascending: true }).order('created_at', { ascending: true });
+
+      // Paginación para superar el límite de 1000 registros
+      let allData = [];
+      let fromRow = 0;
+      const step = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await queryBase.range(fromRow, fromRow + step - 1);
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allData = allData.concat(data);
+          fromRow += step;
+          if (data.length < step) hasMore = false;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const data = allData;
+
+      if (!data || data.length === 0) {
+        this.toast('No hay datos para exportar con ese filtro', 'error');
+        return;
+      }
+
+      // Mapeo de estado legible
+      const estadoLabel = (e) => {
+        const map = { 'en_espera': 'En Espera', 'pendiente': 'Pendiente', 'en_consulta': 'En Consulta', 'atendido': 'Atendido' };
+        return map[e] || e || '';
+      };
+
+      // Encabezados
+      const headers = [
+        'Fecha y Hora', 'Nombre Completo', 'Cédula', 'Celular', 'Dirección',
+        'Especialidad', 'Turno', 'Estado', 'Registrado Por', 'Atendido Por (Triaje)',
+        'Edad', 'Peso', 'Estatura', 'Presión Arterial', 'Temperatura',
+        'Frecuencia Cardíaca', 'Saturación O2', 'Diagnóstico'
+      ];
+
+      const escapeCsv = (val) => `"${String(val || '').replace(/"/g, '""')}"`;
+
+      let csvRows = [headers.map(escapeCsv).join(';')];
+
+      data.forEach(t => {
+        let sv = {};
+        try { sv = JSON.parse(t.signos_vitales || '{}'); } catch (e) { }
+
+        const fechaStr = t.created_at ? new Date(t.created_at).toLocaleString('es-EC') : '';
+        const turnoStr = t.numero_turno_area
+          ? `${(t.especialidad || '').substring(0, 3).toUpperCase()}-${t.numero_turno_area}`
+          : 'N/A';
+
+        const row = [
+          fechaStr,
+          t.nombre || '',
+          t.cedula || '',
+          t.celular || '',
+          t.direccion || '',
+          t.especialidad || '',
+          turnoStr,
+          estadoLabel(t.estado),
+          t.creado_por || '',
+          t.atendido_por || '',
+          sv.edad || '',
+          sv.peso || '',
+          sv.estatura || '',
+          sv.presion || '',
+          sv.temperatura || '',
+          sv.frecuencia || '',
+          sv.saturacion || '',
+          sv.diagnostico || ''
+        ];
+
+        csvRows.push(row.map(escapeCsv).join(';'));
+      });
+
+      // BOM para compatibilidad UTF-8 con Excel
+      const BOM = '\uFEFF';
+      const csvContent = BOM + csvRows.join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const espNombre = especialidadSel === 'TODAS LAS ESPECIALIDADES' ? 'Todas' : especialidadSel.replace(/ /g, '_');
+      const filtroNombre = filtroSel === 'todos' ? 'Todos' : filtroSel === 'lista' ? 'EnLista' : 'Atendidos';
+      link.href = url;
+      link.download = `Reporte_${espNombre}_${filtroNombre}_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      this.toast(`✅ Excel descargado: ${data.length} pacientes`, 'success');
+
+    } catch (err) {
+      console.error(err);
+      this.toast('Error al exportar: ' + err.message, 'error');
+    }
+  },
+
+  // ============================================================
+  // HISTORIA CLÍNICA
+  // ============================================================
+
+  abrirHistoriaClinica() {
+    document.getElementById('inputBuscarHistoria').value = '';
+    document.getElementById('historiaClinicaResults').style.display = 'none';
+    document.getElementById('historiaClinicaEmpty').style.display = 'block';
+    document.getElementById('historiaClinicaLoading').style.display = 'none';
+    this.mostrarVista('historiaClinica');
+  },
+
+  async buscarHistoriaClinica() {
+    const termino = document.getElementById('inputBuscarHistoria').value.trim();
+    if (!termino) {
+      this.toast('Por favor, ingresa una cédula o nombre para buscar', 'error');
+      return;
+    }
+
+    const btn = document.querySelector('#view-historiaClinica button.btn-success');
+    if (btn) btn.disabled = true;
+
+    document.getElementById('historiaClinicaEmpty').style.display = 'none';
+    document.getElementById('historiaClinicaResults').style.display = 'none';
+    document.getElementById('historiaClinicaLoading').style.display = 'block';
+
+    try {
+      if (!Estado.online || !sb) throw new Error('Sin conexión a Base de Datos');
+
+      // Búsqueda global: se limpia la sede temporalmente para que el interceptor no filtre
+      const termLimpio = termino.replace(/[,()]/g, ' ');
+      const backupSede = Estado.sede;
+      const fetchFn = window.__originalFetch || window.fetch;
+      const resp = await fetchFn(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=*&or=(cedula.ilike.%25' + encodeURIComponent(termLimpio) + '%25,nombre.ilike.%25' + encodeURIComponent(termLimpio) + '%25)&order=created_at.desc',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+      );
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.message || 'Error en búsqueda de historia clínica');
+
+      this.renderizarHistoriaClinica(data, termino);
+
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al buscar historial: ' + e.message, 'error');
+      document.getElementById('historiaClinicaLoading').style.display = 'none';
+      document.getElementById('historiaClinicaEmpty').style.display = 'block';
+    }
+
+    if (btn) btn.disabled = false;
+  },
+
+  renderizarHistoriaClinica(registros, termino) {
+    document.getElementById('historiaClinicaLoading').style.display = 'none';
+    const container = document.getElementById('historiaClinicaResults');
+
+    if (!registros || registros.length === 0) {
+      container.innerHTML = `
+        <div class="state-empty" style="padding: 2rem;">
+           <span class="state-empty-icon">🔍</span>
+           <span class="state-empty-text">No se encontró historial para "${termino}"</span>
+        </div>`;
+      container.style.display = 'block';
+      return;
+    }
+
+    // El primer registro (más reciente) usaremos para datos generales del paciente
+    const p = registros[0];
+
+    // Generar timeline de visitas
+    let visitasHTML = '';
+
+    registros.forEach((reg) => {
+      let sv = {};
+      try { sv = JSON.parse(reg.signos_vitales || '{}'); } catch (e) { }
+
+      const fecha = new Date(reg.created_at).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' });
+
+      const estadoClases = {
+        'atendido': 'background: var(--success); color: white;',
+        'en_consulta': 'background: var(--primary); color: white;',
+        'en_espera': 'background: #f59e0b; color: white;',
+        'pendiente': 'background: #f59e0b; color: white;',
+        'cancelado': 'background: #ef4444; color: white;'
+      };
+      const estadoBadge = `<span style="padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; ${estadoClases[reg.estado] || 'background: #cbd5e1; color: #334155;'}">${(reg.estado || '').toUpperCase()}</span>`;
+
+      const turnoInfo = reg.numero_turno_area 
+        ? ` - Turno: ${(reg.especialidad || '').substring(0, 3).toUpperCase()}-${reg.numero_turno_area}` 
+        : '';
+
+      const reactivarBtn = (reg.estado === 'cancelado' && Estado.role === 'turnero') 
+        ? `<button class="btn-action" style="background: var(--primary); padding: 0.2rem 0.6rem; font-size: 0.75rem; margin-left: 0.5rem;" onclick="app.reactivarTurnoAusente('${reg.id}')">🔄 Dar Nuevo Turno</button>`
+        : '';
+
+      visitasHTML += `
+        <div style="border-left: 3px solid var(--primary); margin-left: 1rem; padding-left: 1.5rem; padding-bottom: 2rem; position: relative;">
+          <div style="position: absolute; left: -11px; top: 0; width: 18px; height: 18px; background: white; border: 3px solid var(--primary); border-radius: 50%;"></div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; margin-top: -5px; flex-wrap: wrap; gap: 0.5rem;">
+            <strong style="font-size: 1.1rem; color: var(--text-color);">${fecha}${turnoInfo}</strong>
+            <div style="display: flex; align-items: center;">
+              ${estadoBadge}
+              ${reactivarBtn}
+            </div>
+          </div>
+          <div style="background: var(--bg); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem; margin-top: 0.5rem;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+              <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Área / Especialidad</div>
+                <div style="font-weight: 600;">${reg.especialidad || 'N/A'} ${reg.numero_turno_area ? '(Turno ' + reg.numero_turno_area + ')' : ''}</div>
+              </div>
+              <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Atendido Por</div>
+                <div style="font-weight: 600;">${reg.atendido_por || 'N/A'}</div>
+              </div>
+            </div>
+            
+            ${Object.keys(sv).length > 0 ? `
+              <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.25rem;">Signos Vitales</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; background: white; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color);">
+                ${sv.edad ? `<span style="font-size: 0.85rem;"><strong>Edad:</strong> ${sv.edad}</span>` : ''}
+                ${sv.peso ? `<span style="font-size: 0.85rem;"><strong>Peso:</strong> ${sv.peso}</span>` : ''}
+                ${sv.estatura ? `<span style="font-size: 0.85rem;"><strong>Est:</strong> ${sv.estatura}</span>` : ''}
+                ${sv.presion ? `<span style="font-size: 0.85rem;"><strong>PA:</strong> ${sv.presion}</span>` : ''}
+                ${sv.temperatura ? `<span style="font-size: 0.85rem;"><strong>Temp:</strong> ${sv.temperatura}</span>` : ''}
+                ${sv.frecuencia ? `<span style="font-size: 0.85rem;"><strong>FC:</strong> ${sv.frecuencia}</span>` : ''}
+                ${sv.saturacion ? `<span style="font-size: 0.85rem;"><strong>SatO2:</strong> ${sv.saturacion}</span>` : ''}
+              </div>
+            ` : '<div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; font-style: italic;">No hay signos vitales registrados</div>'}
+
+            ${sv.diagnostico ? `
+              <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.25rem;">Diagnóstico / Observaciones</div>
+              <div style="background: rgba(14, 165, 233, 0.05); padding: 0.75rem; border-radius: 6px; font-size: 0.9rem; margin-bottom: 1rem; border: 1px solid rgba(14, 165, 233, 0.2); white-space: pre-wrap;">${sv.diagnostico}</div>
+            ` : ''}
+
+            ${sv.cancelado_por ? `
+              <div style="font-size: 0.8rem; color: var(--danger); text-transform: uppercase; margin-bottom: 0.25rem; font-weight: bold;">Cancelado / Dado de baja por</div>
+              <div style="background: rgba(239, 68, 68, 0.05); padding: 0.75rem; border-radius: 6px; font-size: 0.9rem; margin-bottom: 1rem; border: 1px solid rgba(239, 68, 68, 0.2); color: var(--danger);"><strong>${sv.cancelado_por}</strong> - ${sv.motivo_cancelacion || 'Dado de baja'}</div>
+            ` : ''}
+
+            ${sv.receta ? `
+              <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.25rem;">Receta Médica ${sv.codigo_receta ? '(Cód: ' + sv.codigo_receta + ')' : ''}</div>
+              <div style="background: rgba(16, 185, 129, 0.05); padding: 0.75rem; border-radius: 6px; font-size: 0.9rem; border: 1px solid rgba(16, 185, 129, 0.2); white-space: pre-wrap;">${sv.receta}</div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = `
+      <div style="margin-bottom: 2rem; background: var(--bg); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-color);">
+        <h3 style="margin-bottom: 1rem; color: var(--primary); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <span>👤 Perfil del Paciente</span>
+          <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <span style="font-size: 0.9rem; font-weight: normal; color: var(--text-muted);">${registros.length} atención(es)</span>
+            <button class="btn-action" style="background: var(--primary); padding: 0.4rem 0.8rem; font-size: 0.9rem; min-width: auto; margin: 0;" onclick="app.abrirModalActualizarDatos('${p.cedula || ''}')">✏️ Actualizar Datos</button>
+            <button class="btn-action" style="background: var(--success); padding: 0.4rem 0.8rem; font-size: 0.9rem; min-width: auto; margin: 0;" onclick="app.prepararNuevaCitaDesdeHistoria('${p.cedula || ''}')">📅 Agendar Cita</button>
+          </div>
+        </h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Nombres y Apellidos</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${p.nombre || 'N/A'}</div>
+          </div>
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Número de Cédula</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${p.cedula || 'N/A'}</div>
+          </div>
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Número de Celular</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${p.celular || 'N/A'}</div>
+          </div>
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Dirección</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${p.direccion || 'N/A'}</div>
+          </div>
+        </div>
+      </div>
+      
+      <h3 style="margin-bottom: 1.5rem;">📅 Línea de Tiempo de Atenciones</h3>
+      <div style="padding-top: 10px;">
+        ${visitasHTML}
+      </div>
+    `;
+
+    container.style.display = 'block';
+  },
+
+  async abrirModalActualizarDatos(cedulaOriginal) {
+    if (!cedulaOriginal) {
+      this.toast('El paciente no tiene cédula válida para actualizar', 'error');
+      return;
+    }
+    if (!Estado.online || !sb) return;
+
+    try {
+      const { data: paciente } = await sb.from('pacientes_espera').select('*').eq('cedula', cedulaOriginal).order('created_at', {ascending: false}).limit(1).single();
+      if (!paciente) throw new Error('No se encontraron datos');
+
+      const modal = document.createElement('div');
+      modal.id = 'modalActualizarDatos';
+      modal.style.cssText = `
+        position:fixed;inset:0;z-index:9999;
+        display:flex;align-items:center;justify-content:center;
+        padding:1rem;background:rgba(10,15,30,0.65);
+        backdrop-filter:blur(8px);animation:fadeIn .2s ease;
+      `;
+      modal.innerHTML = `
+        <div style="background:var(--surface-solid);border-radius:16px;width:100%;max-width:500px;box-shadow:0 24px 64px rgba(0,0,0,0.25);overflow:hidden;animation:slideUp .3s cubic-bezier(.16,1,.3,1);font-family:'Outfit',sans-serif;color:var(--text-dark);">
+          <div style="background:var(--primary);padding:1.5rem;display:flex;align-items:center;gap:1rem;">
+            <div style="flex:1;">
+              <div style="color:#fff;font-size:1.25rem;font-weight:700;">✏️ Actualizar Datos</div>
+            </div>
+            <button onclick="document.getElementById('modalActualizarDatos').remove()" style="background:none;border:none;color:white;font-size:1.5rem;cursor:pointer;">&times;</button>
+          </div>
+          <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+            <div>
+              <label style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">Nombres y Apellidos</label>
+              <input type="text" id="updNombre" class="input-modern" value="${paciente.nombre || ''}" style="width:100%;">
+            </div>
+            <div>
+              <label style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">Número de Cédula</label>
+              <input type="text" id="updCedula" class="input-modern" value="${paciente.cedula || ''}" style="width:100%;">
+            </div>
+            <div>
+              <label style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">Número de Celular</label>
+              <input type="text" id="updCelular" class="input-modern" value="${paciente.celular || ''}" style="width:100%;">
+            </div>
+            <div>
+              <label style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">Dirección</label>
+              <input type="text" id="updDireccion" class="input-modern" value="${paciente.direccion || ''}" style="width:100%;">
+            </div>
+            
+            <div style="display:flex;gap:1rem;margin-top:1rem;">
+              <button class="btn-action" style="flex:1;background:var(--success);padding:0.8rem;" onclick="app.guardarActualizacionDatos('${cedulaOriginal}')">💾 Guardar Cambios</button>
+              <button class="btn-action" style="flex:1;background:#f1f5f9;color:#64748b;padding:0.8rem;" onclick="document.getElementById('modalActualizarDatos').remove()">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    } catch (e) {
+      this.toast('Error al obtener datos: ' + e.message, 'error');
+    }
+  },
+
+  async guardarActualizacionDatos(cedulaOriginal) {
+    const nombre = document.getElementById('updNombre').value.trim();
+    const cedula = document.getElementById('updCedula').value.trim();
+    const celular = document.getElementById('updCelular').value.trim();
+    const direccion = document.getElementById('updDireccion').value.trim();
+
+    if (!nombre || !cedula) {
+      this.toast('El nombre y la cédula son obligatorios', 'error');
+      return;
+    }
+    if (!Estado.online || !sb) return;
+
+    try {
+      // Actualizamos todos los registros de esta persona basándonos en su cédula original
+      const { error } = await sb.from('pacientes_espera').update({
+        nombre, cedula, celular, direccion
+      }).eq('cedula', cedulaOriginal);
+
+      if (error) throw error;
+      
+      this.toast('✅ Datos del paciente actualizados en todo su historial', 'success');
+      document.getElementById('modalActualizarDatos').remove();
+      
+      // Actualizar la búsqueda para reflejar los cambios
+      document.getElementById('inputBuscarHistoria').value = cedula;
+      this.buscarHistoriaClinica();
+
+    } catch (e) {
+      this.toast('Error al actualizar datos: ' + e.message, 'error');
+    }
+  },
+
+  prepararNuevaCitaDesdeHistoria(cedula) {
+    if (!cedula) {
+      this.toast('El paciente no tiene cédula registrada. Búscalo manualmente.', 'error');
+      return;
+    }
+    document.getElementById('pacienteCedula').value = cedula;
+    this.buscarPacienteExistente().then(() => {
+      this.mostrarVista('darTurno');
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      const btnPrin = document.getElementById('navBtnPrincipal');
+      if (Estado.role === 'turnero' && btnPrin) btnPrin.classList.add('active');
+      window.scrollTo(0, 0);
+      this.toast('Completa los datos para agendar la cita.', 'info');
+    });
+  },
+
+  async reactivarTurnoAusente(pacienteId) {
+    if (!Estado.online || !sb) return;
+
+    try {
+      // Obtener el registro completo para revisar signos vitales y fecha
+      const { data: pData, error: fetchErr } = await sb.from('pacientes_espera')
+        .select('especialidad, signos_vitales, created_at')
+        .eq('id', pacienteId)
+        .single();
+      if (fetchErr) throw fetchErr;
+
+      // Verificar si los signos vitales fueron tomados HOY
+      let tieneSVDeHoy = false;
+      if (pData && pData.signos_vitales) {
+        let sv = {};
+        try { sv = JSON.parse(pData.signos_vitales); } catch(e) {}
+        // Consideramos que tiene signos vitales válidos si tiene al menos presión, temperatura o saturación
+        const tieneSV = sv.presion || sv.temperatura || sv.saturacion || sv.frecuencia;
+        if (tieneSV && pData.created_at) {
+          const fechaRegistro = new Date(pData.created_at);
+          const hoy = new Date();
+          // Comparar solo la fecha (año, mes, día)
+          tieneSVDeHoy = (
+            fechaRegistro.getFullYear() === hoy.getFullYear() &&
+            fechaRegistro.getMonth() === hoy.getMonth() &&
+            fechaRegistro.getDate() === hoy.getDate()
+          );
+        }
+      }
+
+      // Mensaje de confirmación con información del destino
+      const destino = tieneSVDeHoy
+        ? 'directo a la especialidad (ya tiene signos vitales de hoy ✅)'
+        : 'a Signos Vitales / Triaje (no tiene signos vitales de hoy)';
+      if (!confirm(`¿Deseas dar un nuevo turno a este paciente?\n\nSe enviará ${destino}.`)) return;
+
+      let updateData = {
+        created_at: new Date().toISOString()
+      };
+
+      if (tieneSVDeHoy) {
+        // Tiene signos vitales de hoy → va directo a la especialidad
+        updateData.estado = 'pendiente';
+        updateData.atendido_por = 'Signos Vitales (previos de hoy)';
+      } else {
+        // No tiene signos vitales de hoy → pasa por triaje
+        updateData.estado = 'en_espera';
+        updateData.atendido_por = null;
+      }
+
+      // Calcular nuevo número de turno para la especialidad
+      if (pData && pData.especialidad) {
+        const { data: maxData } = await sb.from('pacientes_espera')
+          .select('numero_turno_area')
+          .eq('especialidad', pData.especialidad)
+          .gte('created_at', Estado.brigadaDesde)
+          .not('numero_turno_area', 'is', null)
+          .order('numero_turno_area', { ascending: false })
+          .limit(1);
+
+        let numTurno = 1;
+        if (maxData && maxData.length > 0 && maxData[0].numero_turno_area) {
+          numTurno = maxData[0].numero_turno_area + 1;
+        }
+        updateData.numero_turno_area = numTurno;
+      }
+
+      const { error } = await sb.from('pacientes_espera').update(updateData).eq('id', pacienteId);
+      if (error) throw error;
+
+      if (tieneSVDeHoy) {
+        this.toast('✅ Turno reactivado — Paciente directo a especialidad (signos vitales ya tomados hoy)', 'success');
+      } else {
+        this.toast('⏳ Turno reactivado — Paciente enviado a Signos Vitales / Triaje', 'success');
+      }
+      this.buscarHistoriaClinica(); // Refrescar la historia
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al reactivar el turno', 'error');
+    }
+  },
+
+  // ============================================================
+  // ROL: ADMIN (Panel de Control de Usuarios)
+  // ============================================================
+
+  async adminCargarUsuarios() {
+    const listEl = document.getElementById('adminUserList');
+    if (!listEl) return;
+    listEl.innerHTML = `
+      <li>
+        <div class="state-empty animate-pulse">
+          <span class="state-empty-icon">👤</span>
+          <span class="state-empty-text">Cargando usuarios...</span>
+        </div>
+      </li>`;
+
+    try {
+      const { data, error } = await sb.rpc('admin_obtener_usuarios', {
+        p_admin_user: Estado.userName,
+        p_admin_pass: Estado.adminPass
+      });
+      if (error) throw error;
+      if (!data.success) throw new Error(data.message);
+
+      listEl.innerHTML = '';
+      const usuarios = data.data || [];
+      
+      // Intentar recuperar la sede de todos los usuarios (ya que el RPC antiguo no la devuelve)
+      try {
+        const resp = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?select=username,sede`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        const rows = await resp.json();
+        if (Array.isArray(rows)) {
+          usuarios.forEach(u => {
+            const match = rows.find(r => r.username === u.username);
+            if (match && match.sede) u.sede = match.sede;
+          });
+        }
+      } catch(e) { console.warn('No se pudieron obtener las sedes', e); }
+      
+      // Mostrar TODOS los usuarios, indicando la sede a la que pertenece cada uno
+      usuarios.forEach(u => { if (u.role !== 'admin' && !u.sede) u.sede = 'Sede A'; });
+      const nombreSede = s => s === 'Sede A' ? (Estado.nombreSedeA || 'Sede A') : (s === 'Sede B' ? (Estado.nombreSedeB || 'Sede B') : s);
+      const usuariosFiltrados = usuarios.slice().sort((a, b) =>
+        (a.role === 'admin' ? '' : (a.sede || '')).localeCompare(b.role === 'admin' ? '' : (b.sede || '')) ||
+        a.username.localeCompare(b.username));
+
+      if (usuariosFiltrados.length === 0) {
+        listEl.innerHTML = `
+          <li>
+            <div class="state-empty">
+              <span class="state-empty-icon">👥</span>
+              <span class="state-empty-text">No hay usuarios registrados</span>
+            </div>
+          </li>`;
+        return;
+      }
+
+      usuariosFiltrados.forEach(u => {
+        const roleClass = u.role === 'admin' ? 'admin' : (u.role === 'doctor' ? 'doctor' : (u.role === 'enfermera' ? 'enfermera' : 'turnero'));
+        listEl.innerHTML += `
+          <li class="admin-user-item">
+            <div class="admin-user-info">
+              <div class="admin-username">@${u.username}${u.username === Estado.userName ? ' <span style="color:#a0aec0;font-size:0.78rem;font-weight:500;">(tú)</span>' : ''}</div>
+              <div class="admin-user-meta">
+                <span class="role-badge ${roleClass}">${u.role.toUpperCase()}</span>
+                ${u.area ? `<span class="area-tag">🏥 ${u.area}</span>` : ''}
+                ${u.role === 'admin' ? `<span class="area-tag" style="background:#e0e7ff;color:#4f46e5;">📍 Todas las sedes</span>` : `<span class="area-tag" style="background:#e0e7ff;color:#4f46e5;">📍 ${nombreSede(u.sede)}</span>`}
+              </div>
+            </div>
+            ${u.username !== Estado.userName
+            ? `<button class="btn-action" style="background:var(--danger);" onclick="app.adminEliminarUsuario('${u.id}', '${u.username}')">🗑️ Eliminar</button>`
+            : ''}
+          </li>`;
+      });
+    } catch (e) {
+      console.error(e);
+      listEl.innerHTML = `<li><div class="state-empty"><span class="state-empty-icon">❌</span><span class="state-empty-text">Error: ${e.message}</span></div></li>`;
+    }
+  },
+
+  async cambiarSedeAdmin(nuevaSede) {
+    Estado.sede = nuevaSede;
+    const sesionInfo = localStorage.getItem('turnero_session');
+    if (sesionInfo) {
+      const parsed = JSON.parse(sesionInfo);
+      parsed.sede = nuevaSede;
+      localStorage.setItem('turnero_session', JSON.stringify(parsed));
+    }
+    
+    // Obtener el inicio de brigada de esta nueva sede
+    await this.obtenerInicioBrigada();
+    this._actualizarInfoBrigada();
+    
+    // Si la vista actual es Dashboard, refrescarla
+    const vistaDash = document.getElementById('view-dashboard');
+    if (vistaDash && vistaDash.classList.contains('active')) {
+      this.generarDashboard();
+    }
+    
+    // Refrescar la lista de usuarios para mostrar solo los de la sede actual
+    this.adminCargarUsuarios();
+    
+    this.toast('Sede cambiada a: ' + nuevaSede, 'info');
+  },
+
+  async adminCrearUsuario() {
+    const username = (document.getElementById('adminNewUser').value || '').trim();
+    const pass = (document.getElementById('adminNewPass').value || '').trim();
+    const role = document.getElementById('adminNewRole').value;
+    const area = (document.getElementById('adminNewArea').value || '').trim();
+    const sede = (document.getElementById('adminNewSede').value || 'Sede A');
+
+    if (!username || !pass) {
+      this.toast('Por favor completa usuario y contraseña', 'error');
+      return;
+    }
+    if (role === 'doctor' && !area) {
+      this.toast('El doctor debe tener un área especificada', 'error');
+      return;
+    }
+
+    try {
+      const { data, error } = await sb.rpc('admin_crear_usuario', {
+        p_admin_user: Estado.userName,
+        p_admin_pass: Estado.adminPass,
+        p_new_username: username,
+        p_new_password: pass,
+        p_new_role: role,
+        p_new_area: role === 'doctor' ? area : null
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.message);
+
+      // Guardar la sede designada (y verificar que realmente se guardó)
+      const { data: upd, error: updErr } = await sb.from('usuarios')
+        .update({ sede: sede }).eq('username', username).select('username,sede');
+      if (updErr) throw updErr;
+      if (!upd || upd.length === 0 || upd[0].sede !== sede) {
+        throw new Error('El usuario se creó pero no se pudo asignar la sede. Revisa los permisos de la tabla usuarios.');
+      }
+
+      this.toast(`Usuario @${username} creado y asignado a ${sede}`, 'success');
+      document.getElementById('adminNewUser').value = '';
+      document.getElementById('adminNewPass').value = '';
+      if (role === 'doctor') document.getElementById('adminNewArea').value = '';
+
+      this.adminCargarUsuarios();
+    } catch (e) {
+      console.error(e);
+      this.toast('Error: ' + e.message, 'error');
+    }
+  },
+
+  async adminEliminarUsuario(id, username) {
+    if (!confirm(`¿Estás seguro de que deseas ELIMINAR el usuario @${username}?`)) return;
+
+    try {
+      const { data, error } = await sb.rpc('admin_eliminar_usuario', {
+        p_admin_user: Estado.userName,
+        p_admin_pass: Estado.adminPass,
+        p_target_id: id
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.message);
+
+      this.toast(`Usuario @${username} eliminado`, 'success');
+      this.adminCargarUsuarios();
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al eliminar: ' + e.message, 'error');
+    }
+  },
+
+  // ============================================================
+  // NUEVA BRIGADA — Resetea la vista del sistema sin borrar datos
+  // ============================================================
+  iniciarNuevaBrigada() {
+    // Modal de confirmación visual de doble seguridad
+    const modal = document.createElement('div');
+    modal.id = 'modalNuevaBrigada';
+    modal.style.cssText = `
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,0.65); backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 1rem;
+    `;
+    modal.innerHTML = `
+      <div style="
+        background: white; border-radius: 20px; padding: 2.5rem;
+        max-width: 480px; width: 100%; text-align: center;
+        box-shadow: 0 30px 80px rgba(0,0,0,0.4);
+        border: 2px solid #fee2e2;
+        animation: slideUp .3s ease;
+      ">
+        <div style="font-size: 4rem; margin-bottom: 1rem;">🚑</div>
+        <h2 style="margin: 0 0 0.75rem; color: #dc2626; font-size: 1.5rem; font-weight: 800;">Iniciar Nueva Brigada</h2>
+        <p style="color: #64748b; margin-bottom: 0.5rem; font-size: 0.95rem; line-height: 1.6;">
+          Esta acción <strong style="color:#dc2626">ocultará</strong> todos los pacientes registrados actualmente.
+          La información <strong>NO se elimina</strong> — queda guardada en el historial y en la Historia Clínica.
+        </p>
+        <p style="color: #64748b; margin-bottom: 1.75rem; font-size: 0.95rem; line-height: 1.6;">
+          Al ingresar una cédula ya registrada, los datos del paciente se recuperarán automáticamente.
+        </p>
+        <div style="background: #fef3c7; border: 1.5px solid #f59e0b; border-radius: 12px; padding: 1rem; margin-bottom: 1.75rem;">
+          <p style="margin: 0; font-size: 0.88rem; color: #92400e; font-weight: 600;">
+            ⚠️ Para confirmar, escribe <strong>NUEVA BRIGADA</strong> en el campo de abajo:
+          </p>
+          <input id="confirmNuevaBrigada" type="text" placeholder="Escribe: NUEVA BRIGADA" style="
+            margin-top: 0.75rem; width: 100%; padding: 0.65rem 1rem;
+            border: 2px solid #f59e0b; border-radius: 8px; font-size: 1rem;
+            text-align: center; font-family: inherit; font-weight: 700;
+            text-transform: uppercase; outline: none; box-sizing: border-box;
+          ">
+        </div>
+        <div style="display: flex; gap: 1rem;">
+          <button onclick="app._confirmarNuevaBrigada()" style="
+            flex: 1; padding: 0.9rem; background: linear-gradient(135deg, #dc2626, #b91c1c);
+            color: white; border: none; border-radius: 12px; font-size: 1rem;
+            font-weight: 700; cursor: pointer; font-family: inherit;
+            box-shadow: 0 6px 20px rgba(220,38,38,0.35);
+            transition: all .2s;
+          " onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+            🚀 Iniciar Nueva Brigada
+          </button>
+          <button onclick="document.getElementById('modalNuevaBrigada').remove()" style="
+            padding: 0.9rem 1.5rem; background: #f1f5f9; color: #64748b;
+            border: 1.5px solid #e2e8f0; border-radius: 12px;
+            font-size: 0.95rem; font-weight: 600; cursor: pointer;
+            font-family: inherit; transition: all .2s;
+          " onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    setTimeout(() => { const inp = document.getElementById('confirmNuevaBrigada'); if (inp) inp.focus(); }, 100);
+  },
+
+  async _confirmarNuevaBrigada() {
+    const val = (document.getElementById('confirmNuevaBrigada')?.value || '').trim().toUpperCase();
+    if (val !== 'NUEVA BRIGADA') {
+      // Shake animation en el input
+      const inp = document.getElementById('confirmNuevaBrigada');
+      if (inp) {
+        inp.style.borderColor = '#dc2626';
+        inp.style.animation = 'shake .4s ease';
+        setTimeout(() => { inp.style.animation = ''; inp.style.borderColor = '#f59e0b'; }, 500);
+      }
+      this.toast('Debes escribir exactamente: NUEVA BRIGADA', 'error');
+      return;
+    }
+
+    try {
+      // Insertar registro fantasma directamente (sin monkey patch) para marcar inicio de brigada
+      const insertResp = await window.__originalFetch(
+        SUPABASE_URL + '/rest/v1/pacientes_espera',
+        {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify({
+            nombre: '[SISTEMA_NUEVA_BRIGADA_' + Estado.sede + ']',
+            estado: 'atendido',
+            creado_por: Estado.userName,
+            sede: Estado.sede
+          })
+        }
+      );
+      const insertData = await insertResp.json();
+      if (!insertResp.ok) throw new Error(JSON.stringify(insertData));
+
+      const created_at = Array.isArray(insertData) ? insertData[0].created_at : insertData.created_at;
+
+      Estado.brigadaDesde = created_at;
+      localStorage.setItem('brigada_activa_desde_' + Estado.sede, created_at);
+
+      // Cerrar modal
+      const modal = document.getElementById('modalNuevaBrigada');
+      if (modal) modal.remove();
+
+      // Actualizar la UI
+      this._actualizarInfoBrigada();
+      this.adminCargarUsuarios();
+
+      // Notificación de éxito
+      this.toast('🚀 ¡Nueva brigada iniciada! Turnos empezarán desde 1.', 'success');
+      setTimeout(() => this.toast('📂 Los datos anteriores están guardados en Historia Clínica.', 'success'), 1500);
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al iniciar la nueva brigada: ' + e.message, 'error');
+    }
+  },
+
+  _actualizarInfoBrigada() {
+    const el = document.getElementById('brigadaInfoLabel');
+    if (!el || !Estado.brigadaDesde) return;
+    
+    // Si la fecha es la por defecto (año 2000 en UTC), la ocultamos de la interfaz
+    if (Estado.brigadaDesde.startsWith('2000-01-01')) {
+      el.style.display = 'none';
+    } else {
+      el.style.display = 'block';
+      const fecha = new Date(Estado.brigadaDesde);
+      const fechaStr = fecha.toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' });
+      el.innerHTML = `<span style="color: #059669;">🚀 Brigada activa desde: <strong>${fechaStr}</strong></span>`;
+    }
+  },
+
+  // ---- DASHBOARD (ANALYTICS) ----
+  abrirDashboard() {
+    this.activarTab('Dashboard');
+    this.mostrarVista('dashboard');
+    this.generarDashboard();
+  },
+
+  async generarDashboard() {
+    if (!Estado.online || !sb) return;
+    try {
+      let allData = [];
+      let fromRow = 0;
+      const step = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await sb.from('pacientes_espera')
+          .select('*')
+          .eq('sede', Estado.sede)
+          .gte('created_at', Estado.brigadaDesde || '2000-01-01T00:00:00.000Z')
+          .range(fromRow, fromRow + step - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allData = allData.concat(data);
+          fromRow += step;
+          if (data.length < step) hasMore = false;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const data = allData;
+
+      const total = data.length;
+      const atendidos = data.filter(d => d.estado === 'atendido').length;
+      const enEspera = data.filter(d => d.estado === 'en_espera' || d.estado === 'pendiente').length;
+      const enConsulta = data.filter(d => d.estado === 'en_consulta').length;
+
+      document.getElementById('dashTotalPacientes').innerText = total;
+      document.getElementById('dashTotalAtendidos').innerText = atendidos;
+      document.getElementById('dashTotalEspera').innerText = enEspera;
+
+      // Agrupar por áreas
+      const areasCount = {};
+      data.forEach(d => {
+        const area = d.especialidad || 'Desconocido';
+        areasCount[area] = (areasCount[area] || 0) + 1;
+      });
+
+      this._renderChartAreas(Object.keys(areasCount), Object.values(areasCount));
+
+      // Agrupar por estados
+      const estadosCount = { 'Atendido': atendidos, 'En Espera/Pendiente': enEspera, 'En Consulta': enConsulta };
+      this._renderChartEstados(Object.keys(estadosCount), Object.values(estadosCount));
+
+    } catch (e) {
+      console.error(e);
+      this.toast('Error cargando estadísticas', 'error');
+    }
+  },
+
+  _renderChartAreas(labels, data) {
+    const ctx = document.getElementById('chartAreas');
+    if (!ctx) return;
+    if (window.chartAreasInstance) window.chartAreasInstance.destroy();
+
+    window.chartAreasInstance = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: data,
+          backgroundColor: ['#38bdf8', '#34d399', '#f472b6', '#fbbf24', '#a78bfa', '#94a3b8'],
+          borderWidth: 0
+        }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8' } } } }
+    });
+  },
+
+  _renderChartEstados(labels, data) {
+    const ctx = document.getElementById('chartEstados');
+    if (!ctx) return;
+    if (window.chartEstadosInstance) window.chartEstadosInstance.destroy();
+
+    window.chartEstadosInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Cantidad',
+          data: data,
+          backgroundColor: ['#10b981', '#f59e0b', '#3b82f6'],
+          borderRadius: 6
+        }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: '#94a3b8' } }, x: { ticks: { color: '#94a3b8' } } } }
+    });
+  },
+
+  // ============================================================
+  // ESTADO DE TURNOS POR ESPECIALIDAD
+  // ============================================================
+  abrirEstadoTurnos() {
+    this.activarTab('EstadoTurnos');
+    this.mostrarVista('estadoTurnos');
+    this.cargarEstadoTurnos();
+    
+    if (Estado.estadoTurnosInterval) clearInterval(Estado.estadoTurnosInterval);
+    Estado.estadoTurnosInterval = setInterval(() => {
+      const vista = document.getElementById('view-estadoTurnos');
+      if (vista && vista.classList.contains('active')) {
+        this.cargarEstadoTurnos(true);
+      } else {
+        clearInterval(Estado.estadoTurnosInterval);
+      }
+    }, 5000);
+  },
+
+  async cargarEstadoTurnos(silent = false) {
+    const grid = document.getElementById('gridEstadoTurnos');
+    if (!grid) return;
+    if (!silent) grid.innerHTML = '<div style="color:var(--text-muted); text-align:center; width:100%;">Cargando estado...</div>';
+    
+    if (!Estado.online || !sb) return;
+
+    try {
+      const { data, error } = await sb.from('pacientes_espera')
+        .select('nombre, especialidad, estado, numero_turno_area, atendido_por, signos_vitales')
+        .eq('sede', Estado.sede)
+        .gte('created_at', Estado.brigadaDesde)
+        .order('numero_turno_area', { ascending: false });
+        
+      if (error) throw error;
+      
+      const areas = {};
+      const signosVitalesActivos = []; // pacientes actualmente en en_triaje
+      const candidatosUltimoTriaje = []; // todos los que ya pasaron por signos
+      let signosEnEspera = 0;
+      let ultimoTriaje = null; // último que pasó por signos vitales (en_consulta o atendido)
+
+      data.forEach(p => {
+        if (!p.especialidad) return;
+
+        if (!areas[p.especialidad]) {
+          areas[p.especialidad] = { atendiendo: null, enEspera: 0, total: 0, paciente: null };
+        }
+
+        areas[p.especialidad].total++;
+
+        // Contar en espera para signos: solo los que aún no han pasado (sin signos vitales guardados)
+        if (p.estado === 'en_espera') {
+          areas[p.especialidad].enEspera++;
+          signosEnEspera++;
+        }
+        if (p.estado === 'pendiente') {
+          // pendiente con signos_vitales guardados = ya pasó por signos, a esperar doctor
+          // pendiente sin signos_vitales = aún no pasó por signos
+          const tieneSV = p.signos_vitales && p.signos_vitales !== '{}';
+          if (!tieneSV) {
+            areas[p.especialidad].enEspera++;
+            signosEnEspera++;
+          }
+        }
+
+        if (p.estado === 'en_triaje') {
+          // Están actualmente en Signos Vitales
+          signosVitalesActivos.push({
+            turno: p.numero_turno_area
+              ? `${(p.especialidad || '').substring(0, 3).toUpperCase()}-${p.numero_turno_area}`
+              : '—',
+            nombre: p.nombre || 'Desconocido',
+            especialidad: p.especialidad
+          });
+        }
+
+        // Recolectar candidatos a "último triajado" (para elegir por triaje_at más tarde)
+        const yaTriajado = (
+          (p.estado === 'pendiente' && p.signos_vitales && p.signos_vitales !== '{}') ||
+          p.estado === 'en_consulta' ||
+          p.estado === 'atendido' ||
+          p.estado === 'cancelado'
+        );
+        if (yaTriajado) {
+          let triaje_at = '';
+          try {
+            const svObj = JSON.parse(p.signos_vitales || '{}');
+            triaje_at = svObj.triaje_at || '';
+          } catch(e) {}
+          candidatosUltimoTriaje.push({
+            turno: p.numero_turno_area
+              ? `${(p.especialidad || '').substring(0, 3).toUpperCase()}-${p.numero_turno_area}`
+              : '—',
+            nombre: p.nombre || 'Desconocido',
+            especialidad: p.especialidad,
+            triaje_at
+          });
+        }
+
+        // El último en consulta, atendido o cancelado es el turno más reciente de la especialidad
+        if ((p.estado === 'en_consulta' || p.estado === 'atendido' || p.estado === 'cancelado') && !areas[p.especialidad].atendiendo) {
+          areas[p.especialidad].atendiendo = p.numero_turno_area
+            ? `${(p.especialidad || '').substring(0, 3).toUpperCase()}-${p.numero_turno_area}`
+            : 'S/N';
+          areas[p.especialidad].doctor = p.atendido_por || 'N/A';
+          areas[p.especialidad].paciente = p.nombre || 'Desconocido';
+        }
+      });
+
+      // Elegir el último triajado por timestamp de triaje (más reciente)
+      if (candidatosUltimoTriaje.length > 0) {
+        candidatosUltimoTriaje.sort((a, b) => b.triaje_at.localeCompare(a.triaje_at));
+        ultimoTriaje = candidatosUltimoTriaje[0];
+      }
+
+      let html = '';
+
+      // ── Tarjeta SIGNOS VITALES siempre visible si hay datos ──────────
+      if (Object.keys(areas).length > 0) {
+        let listaPacientes;
+        if (signosVitalesActivos.length > 0) {
+          // Hay pacientes activos en triaje ahora mismo
+          listaPacientes = signosVitalesActivos.map(sv => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding: 0.4rem 0; border-bottom: 1px solid var(--border);">
+                <span style="font-weight:700; color: var(--success); font-size: 1rem; min-width:60px;">${sv.turno}</span>
+                <span style="font-weight:600; color: var(--text-dark); font-size:0.9rem; flex:1; margin:0 0.5rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sv.nombre}</span>
+                <span style="font-size:0.75rem; color: var(--text-muted); white-space:nowrap;">${sv.especialidad}</span>
+              </div>`).join('');
+        } else if (ultimoTriaje) {
+          // No hay nadie activo, mostrar el último que pasó
+          listaPacientes = `
+            <div style="opacity:0.7;">
+              <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.3rem;">Último atendido:</div>
+              <div style="display:flex; justify-content:space-between; align-items:center; padding: 0.4rem 0;">
+                <span style="font-weight:700; color: #94a3b8; font-size: 1rem; min-width:60px;">${ultimoTriaje.turno}</span>
+                <span style="font-weight:600; color: var(--text-dark); font-size:0.9rem; flex:1; margin:0 0.5rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${ultimoTriaje.nombre}</span>
+                <span style="font-size:0.75rem; color: var(--text-muted); white-space:nowrap;">${ultimoTriaje.especialidad}</span>
+              </div>
+            </div>`;
+        } else {
+          listaPacientes = `<div style="color:var(--text-muted); font-size:0.9rem; text-align:center; padding: 0.5rem 0;">Sin pacientes en este momento</div>`;
+        }
+
+        html += `
+          <div style="background: var(--surface-solid); border-radius: var(--radius-md); padding: 1.5rem; border: 2px solid rgba(14,165,233,0.4); box-shadow: 0 4px 15px rgba(14,165,233,0.1); grid-column: 1 / -1;">
+            <h3 style="margin-top:0; color:#0ea5e9; font-size:1.2rem; margin-bottom:0.3rem;">🩺 Signos Vitales — Enfermería</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin:0 0 1rem;">Pacientes que están siendo atendidos en este momento</p>
+            <div style="min-height: 2rem;">${listaPacientes}</div>
+            <div style="margin-top:1rem; font-size:0.9rem;">
+              👥 Pacientes aún en sala de espera: <strong style="color:#f59e0b;">${signosEnEspera}</strong>
+            </div>
+          </div>
+        `;
+      }
+
+      if (Object.keys(areas).length === 0) {
+        html = '<div style="color:var(--text-muted); text-align:center; width:100%;">No hay registros de turnos en esta brigada.</div>';
+      } else {
+        Object.keys(areas).sort().forEach(esp => {
+          const a = areas[esp];
+          html += `
+            <div style="background: var(--surface-solid); border-radius: var(--radius-md); padding: 1.5rem; border: 1px solid var(--border); box-shadow: 0 4px 6px rgba(0,0,0,0.02); display: flex; flex-direction: column;">
+              <h3 style="margin-top:0; color: var(--primary); font-size: 1.2rem; margin-bottom: 1rem; border-bottom: 2px solid rgba(14,165,233,0.1); padding-bottom: 0.5rem;">${esp}</h3>
+              <div style="margin-bottom: 0.8rem; flex-grow: 1;">
+                <span style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Atendiendo Turno:</span><br>
+                <strong style="font-size: 1.8rem; color: ${a.atendiendo ? 'var(--success)' : 'var(--text-muted)'};">${a.atendiendo ? a.atendiendo : '--'}</strong>
+                ${a.paciente ? `<div style="font-size: 0.95rem; font-weight: bold; color: var(--text-dark); margin-top: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">👤 ${a.paciente}</div>` : ''}
+              </div>
+              <div style="font-size: 0.9rem; margin-bottom: 0.3rem;">
+                👨‍⚕️ Dr/a: <strong style="color: var(--text-dark);">${a.doctor || 'N/A'}</strong>
+              </div>
+              <div style="font-size: 0.9rem;">
+                👥 En espera: <strong style="color: #f59e0b;">${a.enEspera}</strong>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      grid.innerHTML = html;
+    } catch (e) {
+      grid.innerHTML = `<div style="color:red; text-align:center; width:100%;">Error: ${e.message}</div>`;
+    }
+  },
+
+  // ---- TOAST ----
+  // ============================================================
+  // HISTORIA CLÍNICA
+  // ============================================================
+  abrirHistoriaClinica() {
+    this.activarTab('Historia');
+    this.mostrarVista('historiaClinica');
+    document.getElementById('historiaClinicaResults').style.display = 'none';
+    document.getElementById('historiaClinicaEmpty').style.display = 'block';
+    document.getElementById('historiaClinicaLoading').style.display = 'none';
+    const input = document.getElementById('inputBuscarHistoria');
+    if (input) { input.value = ''; input.focus(); }
+  },
+
+  async buscarHistoriaClinica() {
+    const query = (document.getElementById('inputBuscarHistoria').value || '').trim();
+    if (!query) {
+      this.toast('Ingresa una cédula o nombre para buscar', 'error');
+      return;
+    }
+    if (!Estado.online || !sb) {
+      this.toast('Sin conexión a la base de datos', 'error');
+      return;
+    }
+
+    document.getElementById('historiaClinicaEmpty').style.display = 'none';
+    document.getElementById('historiaClinicaResults').style.display = 'none';
+    document.getElementById('historiaClinicaLoading').style.display = 'block';
+
+    try {
+      const fetchFn = window.__originalFetch || window.fetch;
+      
+      // Intentar buscar por cédula
+      let resp = await fetchFn(
+        SUPABASE_URL + '/rest/v1/pacientes_espera?select=*&cedula=eq.' + encodeURIComponent(query) + '&order=created_at.desc',
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+      );
+      let data = await resp.json();
+      if (!resp.ok) throw new Error(data.message || 'Error en búsqueda por cédula');
+
+      // Si no hay resultado por cédula, buscar por nombre
+      if (!data || data.length === 0) {
+        resp = await fetchFn(
+          SUPABASE_URL + '/rest/v1/pacientes_espera?select=*&nombre=ilike.*' + encodeURIComponent(query) + '*&order=created_at.desc&limit=50',
+          { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Accept': 'application/json' } }
+        );
+        data = await resp.json();
+        if (!resp.ok) throw new Error(data.message || 'Error en búsqueda por nombre');
+      }
+
+      document.getElementById('historiaClinicaLoading').style.display = 'none';
+      this.renderizarHistoriaClinica(data || [], query);
+
+    } catch (e) {
+      Estado.sede = backupSede;
+      console.error(e);
+      document.getElementById('historiaClinicaLoading').style.display = 'none';
+      document.getElementById('historiaClinicaEmpty').style.display = 'block';
+      this.toast('Error en la búsqueda: ' + e.message, 'error');
+    }
+  },
+
+  renderizarHistoriaClinica(registros, query) {
+    const container = document.getElementById('historiaClinicaResults');
+    if (!registros || registros.length === 0) {
+      document.getElementById('historiaClinicaEmpty').querySelector('.state-empty-text').innerText =
+        `No se encontraron registros para "${query}"`;
+      document.getElementById('historiaClinicaEmpty').style.display = 'block';
+      return;
+    }
+
+    // Agrupar por paciente (cédula o nombre)
+    const pacientes = {};
+    registros.forEach(r => {
+      const key = r.cedula || r.nombre;
+      if (!pacientes[key]) {
+        pacientes[key] = { nombre: r.nombre, cedula: r.cedula, celular: r.celular, direccion: r.direccion, visitas: [] };
+      }
+      // Mantener el nombre más limpio (sin prefijos)
+      if (!r.nombre.startsWith('[')) pacientes[key].nombre = r.nombre;
+      if (r.celular) pacientes[key].celular = r.celular;
+      if (r.direccion) pacientes[key].direccion = r.direccion;
+      pacientes[key].visitas.push(r);
+    });
+
+    let html = '';
+    Object.values(pacientes).forEach(pac => {
+      const totalVisitas = pac.visitas.length;
+      const ultimaVisita = pac.visitas[0];
+      const sv = (() => { try { return JSON.parse(ultimaVisita.signos_vitales || '{}'); } catch (e) { return {}; } })();
+
+      html += `
+        <div style="border: 1.5px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 2rem; overflow: hidden;">
+          <!-- Cabecera del paciente -->
+          <div style="background: linear-gradient(135deg, var(--primary), #0369a1); color: white; padding: 1.5rem 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+              <div>
+                <h3 style="margin: 0 0 0.25rem; font-size: 1.4rem; font-weight: 800;">${pac.nombre}</h3>
+                <p style="margin: 0; opacity: 0.85; font-size: 0.9rem;">
+                  🪪 Cédula: <strong>${pac.cedula || 'N/A'}</strong>
+                  &nbsp;|&nbsp; 📱 ${pac.celular || 'N/A'}
+                  &nbsp;|&nbsp; 📍 ${pac.direccion || 'N/A'}
+                </p>
+              </div>
+              <div style="text-align: right; opacity: 0.9;">
+                <div style="font-size: 1.6rem; font-weight: 800;">${totalVisitas}</div>
+                <div style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px;">Atenciones</div>
+                <button class="btn-action" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 0.4rem 0.8rem; font-size: 0.8rem; margin-top: 0.5rem; display: block; width: 100%; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'" onclick="app.abrirModalActualizarDatos('${pac.cedula || ''}')">✏️ Actualizar Datos</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Última ficha -->
+          ${sv.edad || sv.peso ? `
+          <div style="background: var(--bg); padding: 1.25rem 2rem; border-bottom: 1px solid var(--border);">
+            <h4 style="margin: 0 0 0.75rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted);">Última Ficha Médica</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 1rem;">
+              ${sv.edad ? `<div style="text-align:center; background: var(--surface-solid); padding: 0.75rem; border-radius: var(--radius-md);"><div style="font-size: 1.3rem; font-weight: 700; color: var(--primary);">${sv.edad}</div><div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Edad</div></div>` : ''}
+              ${sv.peso ? `<div style="text-align:center; background: var(--surface-solid); padding: 0.75rem; border-radius: var(--radius-md);"><div style="font-size: 1.3rem; font-weight: 700; color: var(--primary);">${sv.peso} kg</div><div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Peso</div></div>` : ''}
+              ${sv.estatura ? `<div style="text-align:center; background: var(--surface-solid); padding: 0.75rem; border-radius: var(--radius-md);"><div style="font-size: 1.3rem; font-weight: 700; color: var(--primary);">${sv.estatura}</div><div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Estatura</div></div>` : ''}
+              ${sv.presion ? `<div style="text-align:center; background: var(--surface-solid); padding: 0.75rem; border-radius: var(--radius-md);"><div style="font-size: 1.3rem; font-weight: 700; color: var(--primary);">${sv.presion}</div><div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Presión</div></div>` : ''}
+              ${sv.temperatura ? `<div style="text-align:center; background: var(--surface-solid); padding: 0.75rem; border-radius: var(--radius-md);"><div style="font-size: 1.3rem; font-weight: 700; color: var(--primary);">${sv.temperatura}°C</div><div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Temperatura</div></div>` : ''}
+              ${sv.saturacion ? `<div style="text-align:center; background: var(--surface-solid); padding: 0.75rem; border-radius: var(--radius-md);"><div style="font-size: 1.3rem; font-weight: 700; color: var(--primary);">${sv.saturacion}%</div><div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">SpO₂</div></div>` : ''}
+            </div>
+          </div>` : ''}
+
+          <!-- Timeline de visitas -->
+          <div style="padding: 1.5rem 2rem;">
+            <h4 style="margin: 0 0 1rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted);">Línea de Tiempo de Atenciones</h4>
+            <div style="position: relative; padding-left: 1.5rem; border-left: 2px solid var(--border);">
+              ${pac.visitas.map(v => {
+        const svV = (() => { try { return JSON.parse(v.signos_vitales || '{}'); } catch (e) { return {}; } })();
+        const fecha = v.created_at ? new Date(v.created_at).toLocaleString('es-EC') : 'Fecha desconocida';
+        const nombreLimpio = v.nombre.startsWith('[') ? v.nombre.replace(/^\[.*?\]\s*/, '') : v.nombre;
+        return `
+                  <div style="margin-bottom: 1.5rem; position: relative;">
+                    <div style="position: absolute; left: -1.9rem; top: 0.3rem; width: 12px; height: 12px; border-radius: 50%; background: ${v.estado === 'cancelado' ? 'var(--danger)' : 'var(--primary)'};"></div>
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.3rem; display: flex; justify-content: space-between; align-items: center;">
+                      <span>${fecha} ${v.estado === 'cancelado' ? '<span style="color:var(--danger); font-weight:bold; margin-left: 0.5rem;">[CANCELADO/AUSENTE]</span>' : ''}</span>
+                      ${(v.estado === 'cancelado' && Estado.role === 'turnero') ? `<button class="btn-action" style="background: var(--primary); padding: 0.2rem 0.6rem; font-size: 0.75rem; margin-left: 0.5rem;" onclick="app.reactivarTurnoAusente('${v.id}')">🔄 Dar Nuevo Turno</button>` : ''}
+                    </div>
+                    <div style="font-weight: 700; color: var(--text-dark);">
+                      ${v.especialidad || 'N/A'} ${v.numero_turno_area ? `— Turno: ${(v.especialidad || '').substring(0,3).toUpperCase()}-${v.numero_turno_area}` : ''}
+                      <span style="font-weight: 400; color: var(--text-muted);">— Atendido por: ${v.atendido_por || v.creado_por || 'N/A'}</span>
+                    </div>
+                    ${v.estado === 'cancelado' ? `<div style="margin-top: 0.5rem; font-size: 0.88rem; background: rgba(239, 68, 68, 0.05); padding: 0.6rem 1rem; border-radius: 8px; border-left: 3px solid var(--danger); color: var(--danger);"><strong>Dado de baja por:</strong> ${svV.cancelado_por || 'N/A'} - ${svV.motivo_cancelacion || 'Dado de baja'}</div>` : ''}
+                    ${svV.diagnostico ? `<div style="margin-top: 0.5rem; font-size: 0.88rem; background: rgba(0,0,0,0.03); padding: 0.6rem 1rem; border-radius: 8px; border-left: 3px solid var(--primary);"><strong>Dx:</strong> ${svV.diagnostico}</div>` : ''}
+                    ${svV.receta ? `<div style="margin-top: 0.4rem; font-size: 0.85rem; background: rgba(16,185,129,0.05); padding: 0.6rem 1rem; border-radius: 8px; border-left: 3px solid var(--success);"><strong>Receta:</strong> ${svV.receta}</div>` : ''}
+                    ${svV.farmacia_entrega ? `<div style="margin-top: 0.3rem; font-size: 0.8rem; color: var(--text-muted);">💊 Farmacia: <strong>${svV.farmacia_entrega}</strong>${svV.farmacia_notas ? ' — ' + svV.farmacia_notas : ''}</div>` : ''}
+                  </div>`;
+      }).join('')}
+            </div>
+          </div>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+    container.style.display = 'block';
+  },
+
+  // ============================================================
+  // PROTECCIÓN DE DATOS Y PRIVACIDAD
+  // ============================================================
+  cargarFirma(input, tipo) {
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const preview = document.getElementById(`dp${tipo}FirmaPreview`);
+        const btnRemove = document.getElementById(`dp${tipo}FirmaRemove`);
+        preview.src = e.target.result;
+        preview.style.display = 'block';
+        btnRemove.style.display = 'inline-block';
+      };
+      reader.readAsDataURL(input.files[0]);
+    }
+  },
+
+  eliminarFirma(tipo) {
+    document.getElementById(`dp${tipo}FirmaFile`).value = '';
+    const preview = document.getElementById(`dp${tipo}FirmaPreview`);
+    const btnRemove = document.getElementById(`dp${tipo}FirmaRemove`);
+    preview.src = '';
+    preview.style.display = 'none';
+    btnRemove.style.display = 'none';
+  },
+
+  async guardarConfiguracionDP() {
+    if (!Estado.online || !sb) {
+      this.toast('No hay conexión a la base de datos', 'error');
+      return;
+    }
+
+    const config = {
+      nombre_sede_a: document.getElementById('dpNombreSedeA') ? document.getElementById('dpNombreSedeA').value : 'Sede A',
+      nombre_sede_b: document.getElementById('dpNombreSedeB') ? document.getElementById('dpNombreSedeB').value : 'Sede B',
+      razon_social: document.getElementById('dpRazonSocial').value,
+      ruc: document.getElementById('dpRuc').value,
+      telefono: document.getElementById('dpTelefono').value,
+      direccion: document.getElementById('dpDireccion').value,
+      correo: document.getElementById('dpCorreo').value,
+      juridico_nombre: document.getElementById('dpJuridicoNombre').value,
+      juridico_id: document.getElementById('dpJuridicoId').value,
+      juridico_correo: document.getElementById('dpJuridicoCorreo').value,
+      juridico_firma: document.getElementById('dpJuridicoFirmaPreview').src || '',
+      tecnico_nombre: document.getElementById('dpTecnicoNombre').value,
+      tecnico_correo: document.getElementById('dpTecnicoCorreo').value,
+      tecnico_firma: document.getElementById('dpTecnicoFirmaPreview').src || ''
+    };
+    
+    try {
+      // Obtener versión actual de la base de datos
+      const { data: currentData } = await sb.from('configuracion_clinica').select('*').limit(1);
+      let currentVersion = '1.0';
+      let isUpdate = false;
+      let idToUpdate = null;
+
+      if (currentData && currentData.length > 0) {
+        isUpdate = true;
+        idToUpdate = currentData[0].id;
+        currentVersion = currentData[0].version || '1.0';
+        
+        // Si hay algún cambio en los datos, incrementamos versión
+        const oldConfig = currentData[0];
+        let hasChanges = false;
+        for (let key in config) {
+          if (config[key] !== oldConfig[key]) hasChanges = true;
+        }
+
+        if (hasChanges) {
+          let v = parseFloat(currentVersion);
+          currentVersion = (v + 0.1).toFixed(1);
+        }
+      }
+
+      config.version = currentVersion;
+      config.updated_at = new Date().toISOString();
+      localStorage.setItem('dp_version', currentVersion); // Backup local para vista rápida
+
+      if (isUpdate) {
+        const { error } = await sb.from('configuracion_clinica').update(config).eq('id', idToUpdate);
+        if (error) throw error;
+      } else {
+        const { error } = await sb.from('configuracion_clinica').insert([config]);
+        if (error) throw error;
+      }
+
+      this.toast('Configuración guardada en Supabase. Versión actual: ' + currentVersion, 'success');
+    } catch (e) {
+      console.error(e);
+      this.toast('Error al guardar en Supabase: ' + e.message, 'error');
+    }
+  },
+
+  async cargarConfiguracionDP() {
+    if (!Estado.online || !sb) return;
+
+    try {
+      const { data, error } = await sb.from('configuracion_clinica').select('*').limit(1);
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const config = data[0];
+        
+        Estado.nombreSedeA = config.nombre_sede_a || 'Sede A';
+        Estado.nombreSedeB = config.nombre_sede_b || 'Sede B';
+        
+        if (document.getElementById('dpNombreSedeA')) document.getElementById('dpNombreSedeA').value = Estado.nombreSedeA;
+        if (document.getElementById('dpNombreSedeB')) document.getElementById('dpNombreSedeB').value = Estado.nombreSedeB;
+
+        this.actualizarNombresSedesUI();
+
+        document.getElementById('dpRazonSocial').value = config.razon_social || '';
+        document.getElementById('dpRuc').value = config.ruc || '';
+        document.getElementById('dpTelefono').value = config.telefono || '';
+        document.getElementById('dpDireccion').value = config.direccion || '';
+        document.getElementById('dpCorreo').value = config.correo || '';
+        
+        document.getElementById('dpJuridicoNombre').value = config.juridico_nombre || '';
+        document.getElementById('dpJuridicoId').value = config.juridico_id || '';
+        document.getElementById('dpJuridicoCorreo').value = config.juridico_correo || '';
+        
+        if (config.juridico_firma && config.juridico_firma.startsWith('data:image')) {
+          document.getElementById('dpJuridicoFirmaPreview').src = config.juridico_firma;
+          document.getElementById('dpJuridicoFirmaPreview').style.display = 'block';
+          document.getElementById('dpJuridicoFirmaRemove').style.display = 'inline-block';
+        }
+        
+        document.getElementById('dpTecnicoNombre').value = config.tecnico_nombre || '';
+        document.getElementById('dpTecnicoCorreo').value = config.tecnico_correo || '';
+        
+        if (config.tecnico_firma && config.tecnico_firma.startsWith('data:image')) {
+          document.getElementById('dpTecnicoFirmaPreview').src = config.tecnico_firma;
+          document.getElementById('dpTecnicoFirmaPreview').style.display = 'block';
+          document.getElementById('dpTecnicoFirmaRemove').style.display = 'inline-block';
+        }
+
+        if (config.version) {
+           localStorage.setItem('dp_version', config.version);
+        }
+      }
+    } catch (e) {
+      console.error('Error cargando configuración:', e);
+    }
+    
+    this.actualizarHistorialDP();
+  },
+
+  actualizarNombresSedesUI() {
+    const selects = ['loginSede', 'adminNewSede', 'adminSedeSelector'];
+    selects.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        Array.from(el.options).forEach(opt => {
+          if (opt.value === 'Sede A') opt.text = Estado.nombreSedeA;
+          if (opt.value === 'Sede B') opt.text = Estado.nombreSedeB;
+        });
+      }
+    });
+
+    const tvSedeDisplay = document.getElementById('tvSedeDisplay');
+    if (tvSedeDisplay && Estado.sede) {
+      if (Estado.sede === 'Sede A') tvSedeDisplay.innerText = Estado.nombreSedeA;
+      else if (Estado.sede === 'Sede B') tvSedeDisplay.innerText = Estado.nombreSedeB;
+      else tvSedeDisplay.innerText = Estado.sede;
+    }
+  },
+
+  async actualizarHistorialDP() {
+    const list = document.getElementById('dpHistorialList');
+    if (!list) return;
+
+    if (!Estado.online || !sb) {
+      list.innerHTML = '<li><div class="state-empty"><span class="state-empty-icon">⚠️</span><span class="state-empty-text">Sin conexión para cargar historial.</span></div></li>';
+      return;
+    }
+
+    try {
+      const { data, error } = await sb.from('historial_documentos_dp').select('*').order('fecha_generacion', { ascending: false });
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        list.innerHTML = '<li><div class="state-empty"><span class="state-empty-icon">📂</span><span class="state-empty-text">No hay documentos generados aún en la base de datos.</span></div></li>';
+        return;
+      }
+      
+      list.innerHTML = data.map(h => `
+        <li style="display:flex; justify-content:space-between; padding: 1rem; border-bottom: 1px solid var(--border);">
+          <div>
+            <strong>Versión ${h.version}</strong> - ${new Date(h.fecha_generacion).toLocaleString('es-EC')}
+            <div style="font-size:0.8rem; color:var(--text-muted);">Generado por: ${h.usuario} | ID: ${h.id}</div>
+          </div>
+        </li>
+      `).join('');
+
+    } catch (e) {
+      console.error(e);
+      list.innerHTML = '<li><div class="state-empty"><span class="state-empty-icon">❌</span><span class="state-empty-text">Error al cargar historial.</span></div></li>';
+    }
+  },
+
+  async generarPDFPrivacidad() {
+    if (!Estado.online || !sb) {
+      this.toast('Conexión requerida para generar PDF', 'error');
+      return;
+    }
+    
+    let config = null;
+    let version = '1.0';
+
+    try {
+      const { data } = await sb.from('configuracion_clinica').select('*').limit(1);
+      if (!data || data.length === 0) {
+        this.toast('Debes guardar la configuración antes de generar el PDF', 'error');
+        return;
+      }
+      config = data[0];
+      version = config.version || '1.0';
+    } catch (e) {
+      this.toast('Error cargando configuración', 'error');
+      return;
+    }
+
+    const fecha = new Date().toLocaleDateString('es-EC');
+    const hora = new Date().toLocaleTimeString('es-EC');
+    
+    const modalPrivacidadContent = document.querySelector('#modal-privacidad div[style*="flex-direction: column"]');
+    
+    let textoPolitica = '';
+    if (modalPrivacidadContent) {
+      textoPolitica = modalPrivacidadContent.innerHTML;
+    } else {
+      textoPolitica = '<p>No se encontró el texto de la política.</p>';
+    }
+
+    try {
+      this.toast('Abriendo documento para imprimir/guardar como PDF...', 'success');
+      
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        this.toast('Por favor permite las ventanas emergentes (pop-ups) para generar el PDF', 'error');
+        return;
+      }
+      
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Política de Privacidad v${version}</title>
+          <style>
+            @media print {
+              @page { margin: 1.5cm; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+            body { font-family: 'Inter', sans-serif; color: #333; padding: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 14px; }
+            td { padding: 8px; border: 1px solid #cbd5e1; }
+            .bg-gray { background: #f8fafc; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div style="text-align: center; margin-bottom: 30px;">
+            <img src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png" style="max-height: 80px;">
+            <h1 style="color: #1e293b; font-size: 24px; margin-top: 15px;">POLÍTICA DE PRIVACIDAD Y PROTECCIÓN DE DATOS PERSONALES</h1>
+          </div>
+          
+          <table>
+            <tr>
+              <td class="bg-gray">Razón Social</td>
+              <td>${config.razon_social || 'N/A'}</td>
+              <td class="bg-gray">RUC</td>
+              <td>${config.ruc || 'N/A'}</td>
+            </tr>
+            <tr>
+              <td class="bg-gray">Dirección</td>
+              <td colspan="3">${config.direccion || 'N/A'}</td>
+            </tr>
+            <tr>
+              <td class="bg-gray">Correo</td>
+              <td>${config.correo || 'N/A'}</td>
+              <td class="bg-gray">Teléfono</td>
+              <td>${config.telefono || 'N/A'}</td>
+            </tr>
+          </table>
+          
+          <div style="margin-bottom: 20px; font-size: 14px;">
+            <strong>Versión:</strong> ${version} <br>
+            <strong>Fecha de emisión / actualización:</strong> ${fecha} <br>
+          </div>
+
+          <div style="margin-bottom: 40px; font-size: 14px; line-height: 1.6; text-align: justify;">
+            ${textoPolitica}
+          </div>
+
+          <div style="page-break-inside: avoid;">
+            <h3 style="color: #1e293b; font-size: 18px; margin-bottom: 20px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">REVISIÓN Y RESPONSABLES</h3>
+            <p style="font-size: 12px; margin-bottom: 30px; font-style: italic;">
+              Documento revisado desde las perspectivas jurídica y técnica por los responsables indicados.
+            </p>
+
+            <table style="border: none; margin-top: 50px;">
+              <tr>
+                <td style="border: none; width: 50%; text-align: center; vertical-align: bottom; padding: 10px;">
+                  <div style="min-height: 80px; margin-bottom: 10px;">
+                    ${config.juridico_firma && config.juridico_firma.startsWith('data:image') ? `<img src="${config.juridico_firma}" style="max-height: 80px; max-width: 150px;">` : ''}
+                  </div>
+                  <div style="border-top: 1px solid #000; width: 80%; margin: 0 auto; padding-top: 10px;">
+                    <strong>FIRMA DEL RESPONSABLE JURÍDICO</strong><br>
+                    <span style="font-size: 12px;">${config.juridico_nombre || 'N/A'}</span><br>
+                    <span style="font-size: 12px;">Abogado / Especialista en Protección de Datos</span><br>
+                    ${config.juridico_id ? `<span style="font-size: 12px;">ID: ${config.juridico_id}</span><br>` : ''}
+                  </div>
+                </td>
+                <td style="border: none; width: 50%; text-align: center; vertical-align: bottom; padding: 10px;">
+                  <div style="min-height: 80px; margin-bottom: 10px;">
+                    ${config.tecnico_firma && config.tecnico_firma.startsWith('data:image') ? `<img src="${config.tecnico_firma}" style="max-height: 80px; max-width: 150px;">` : ''}
+                  </div>
+                  <div style="border-top: 1px solid #000; width: 80%; margin: 0 auto; padding-top: 10px;">
+                    <strong>FIRMA DEL RESPONSABLE TÉCNICO</strong><br>
+                    <span style="font-size: 12px;">${config.tecnico_nombre || 'N/A'}</span><br>
+                    <span style="font-size: 12px;">Especialista Técnico de Ciberseguridad</span><br>
+                  </div>
+                </td>
+              </tr>
+            </table>
+            
+            <div style="margin-top: 50px; font-size: 10px; color: #64748b; text-align: center;">
+              Documento generado por ${Estado.userName} el ${fecha} a las ${hora}. ID: ${Date.now()}
+            </div>
+          </div>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      
+      // Esperar a que las imágenes carguen antes de imprimir
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 500);
+
+      // Guardar en historial de Supabase
+      const { error } = await sb.from('historial_documentos_dp').insert([{
+        version: version,
+        usuario: Estado.userName
+      }]);
+      
+      if (error) console.error('Error insertando en historial', error);
+      this.actualizarHistorialDP();
+      
+    } catch (error) {
+      console.error(error);
+      this.toast('Error al generar PDF', 'error');
+    }
+  },
+
+  toast(msg, tipo) {
+    tipo = tipo || 'success';
+    const c = document.getElementById('toastContainer');
+    if (!c) return;
+    const t = document.createElement('div');
+    t.className = 'toast ' + tipo;
+    t.innerText = msg;
+    c.appendChild(t);
+    setTimeout(() => { if (c.contains(t)) c.removeChild(t); }, 3500);
+  }
+};
+
+// ============================================================
+// ARRANQUE
+// ============================================================
+function arrancarApp() {
+  app.init();
+
+  document.getElementById('btnRoleDoctor')?.addEventListener('click', () => app.selectRole('doctor'));
+  document.getElementById('btnRoleEnfermera')?.addEventListener('click', () => app.selectRole('enfermera'));
+  document.getElementById('btnRoleTurnero')?.addEventListener('click', () => app.selectRole('turnero'));
+
+  document.getElementById('btnIngresarTurnero')?.addEventListener('click', () => app.loginTurnero());
+  document.getElementById('btnIngresarEnfermera')?.addEventListener('click', () => app.loginEnfermera());
+  document.getElementById('btnIngresarDoctor')?.addEventListener('click', () => app.loginDoctor());
+
+  document.getElementById('userNameInput')?.addEventListener('keypress', e => {
+    if (e.key === 'Enter') app.loginTurnero();
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', arrancarApp);
+} else {
+  arrancarApp();
+}
+
+window.app = app;
