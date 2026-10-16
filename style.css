@@ -1,48 +1,48 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 /* ============================================================
-   DESIGN SYSTEM TOKENS
+   DESIGN SYSTEM TOKENS — Formal & Institutional
    ============================================================ */
 :root {
-  --primary: #1e3a8a; /* Deep Navy Blue */
-  --primary-hover: #1e40af;
-  --primary-light: #eff6ff;
-  --primary-gradient: #1e3a8a; /* Solid color to remove gradient */
+  --primary: #1a3461;       /* Azul marino institucional */
+  --primary-hover: #1e3f74;
+  --primary-light: #eef2f9;
+  --primary-gradient: #1a3461;
   --secondary: #475569;
   --secondary-gradient: #475569;
 
-  --success: #059669;
+  --success: #047857;
   --success-light: #d1fae5;
-  --success-gradient: #059669;
+  --success-gradient: #047857;
 
-  --warning: #d97706;
+  --warning: #b45309;
   --warning-light: #fef3c7;
-  --danger: #dc2626;
+  --danger: #b91c1c;
   --danger-light: #fee2e2;
 
-  --bg: #f1f5f9;
+  --bg: #f0f2f5;            /* Gris institucional muy suave */
   --surface-solid: #ffffff;
-  --text-dark: #0f172a;
-  --text-body: #334155;
-  --text-muted: #64748b;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
+  --text-dark: #0d1829;
+  --text-body: #374151;
+  --text-muted: #6b7280;
+  --border: #dde1e7;
+  --border-strong: #c4cad4;
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-  --shadow-primary: 0 4px 6px -1px rgba(30, 58, 138, 0.2);
-  --shadow-success: 0 4px 6px -1px rgba(5, 150, 105, 0.2);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.09);
+  --shadow-lg: 0 8px 20px rgba(0, 0, 0, 0.10);
+  --shadow-primary: 0 4px 8px rgba(26, 52, 97, 0.18);
+  --shadow-success: 0 4px 8px rgba(4, 120, 87, 0.16);
 
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
 
-  --transition: all 0.2s ease-in-out;
-  --transition-bounce: all 0.2s ease-in-out;
+  --transition: all 0.18s ease;
+  --transition-bounce: all 0.18s ease;
 }
 
 /* ============================================================
@@ -167,21 +167,20 @@ body {
   padding: 0.9rem 1.5rem;
   font-size: 1rem;
   font-weight: 600;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
-  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(26, 52, 97, 0.25);
+  transition: all 0.18s ease;
 }
 
 .login-btn-glass:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.5);
   background: var(--primary-hover);
+  box-shadow: 0 4px 12px rgba(26, 52, 97, 0.32);
 }
 
 .login-btn-glass:active {
-  transform: translateY(1px);
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4);
+  opacity: 0.9;
+  box-shadow: 0 1px 4px rgba(26, 52, 97, 0.2);
 }
 
 .login-btn-glass.loading-animation {
@@ -538,7 +537,7 @@ main {
 .form-group input:focus,
 .form-group select:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+  box-shadow: 0 0 0 2px rgba(26, 52, 97, 0.12);
   background: #fff;
 }
 
@@ -567,98 +566,77 @@ main {
    BUTTONS
    ============================================================ */
 .btn-large {
-  background: var(--primary-gradient);
+  background: var(--primary);
   color: white;
   border: none;
   padding: 1.1rem 1.6rem;
   border-radius: var(--radius-sm);
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: 1rem;
+  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
   width: 100%;
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 6px 15px rgba(79, 70, 229, 0.3);
-  position: relative;
-  overflow: hidden;
+  transition: all 0.18s ease;
+  box-shadow: 0 2px 8px rgba(26, 52, 97, 0.2);
   letter-spacing: 0.02em;
 }
 
-.btn-large::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -120%;
-  width: 60%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-  transition: 0.6s ease-in-out;
-}
-
-.btn-large:hover::after {
-  left: 130%;
-}
-
 .btn-large:hover {
-  transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 15px 35px rgba(79, 70, 229, 0.45);
-  filter: brightness(1.1);
+  background: var(--primary-hover);
+  box-shadow: 0 4px 12px rgba(26, 52, 97, 0.28);
 }
 
 .btn-large:active {
-  transform: translateY(1px) scale(0.98);
-  box-shadow: 0 4px 10px rgba(79, 70, 229, 0.3);
+  opacity: 0.9;
 }
 
 .btn-large:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
-  transform: none !important;
   box-shadow: none !important;
-  filter: grayscale(0.5);
+  filter: grayscale(0.4);
 }
 
 .btn-large.btn-secondary {
-  background: var(--secondary-gradient);
-  box-shadow: 0 8px 24px rgba(14, 165, 233, 0.25);
+  background: var(--secondary);
+  box-shadow: 0 2px 8px rgba(71, 85, 105, 0.2);
 }
 
 .btn-large.btn-secondary:hover {
-  box-shadow: 0 12px 32px rgba(14, 165, 233, 0.38);
+  background: #3d4f65;
+  box-shadow: 0 4px 12px rgba(71, 85, 105, 0.28);
 }
 
 .btn-large.btn-success {
-  background: var(--success-gradient);
+  background: var(--success);
   box-shadow: var(--shadow-success);
 }
 
 .btn-action {
-  background: linear-gradient(135deg, var(--primary) 0%, #3b82f6 100%);
+  background: var(--primary);
   color: white;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  padding: 0.6rem 1.25rem;
+  border: none;
+  padding: 0.55rem 1.15rem;
   border-radius: var(--radius-sm);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 0.875rem;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: all 0.18s ease;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+  box-shadow: 0 1px 4px rgba(26, 52, 97, 0.18);
 }
 
 .btn-action:hover {
-  transform: translateY(-3px) scale(1.03);
-  filter: brightness(1.1);
-  box-shadow: 0 8px 22px rgba(79, 70, 229, 0.45);
+  background: var(--primary-hover);
+  box-shadow: 0 3px 8px rgba(26, 52, 97, 0.25);
 }
 
 .btn-action:active {
-  transform: translateY(1px) scale(0.98);
-  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+  opacity: 0.9;
 }
 
 .btn-volver {
@@ -765,18 +743,18 @@ main {
   top: 0;
   left: 0;
   bottom: 0;
-  width: 5px;
-  background: linear-gradient(180deg, var(--primary) 0%, #3b82f6 100%);
-  border-radius: 4px 0 0 4px;
+  width: 4px;
+  background: var(--primary);
+  border-radius: 3px 0 0 3px;
 }
 
 .patient-item.en-consulta {
-  background: rgba(209, 250, 229, 0.6);
-  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(236, 253, 245, 0.7);
+  border-color: rgba(4, 120, 87, 0.25);
 }
 
 .patient-item.en-consulta::before {
-  background: linear-gradient(180deg, var(--success) 0%, #059669 100%);
+  background: var(--success);
 }
 
 .patient-item.estado-espera::before {
@@ -874,9 +852,8 @@ main {
 }
 
 .data-item:hover {
-  background: rgba(255, 255, 255, 0.9);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(79, 70, 229, 0.08);
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.07);
 }
 
 .data-item .data-label {
@@ -1206,9 +1183,9 @@ main {
 .modal-excel-backdrop {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.6), rgba(79, 70, 229, 0.18));
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(10, 20, 40, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   cursor: pointer;
 }
 
@@ -1366,10 +1343,9 @@ main {
 }
 
 .admin-user-item:hover {
-  transform: translateY(-2px);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 6px 15px rgba(79, 70, 229, 0.1);
-  border-color: rgba(79, 70, 229, 0.3);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+  border-color: var(--border-strong);
 }
 
 .admin-user-info {
@@ -1410,8 +1386,8 @@ main {
 }
 
 .excel-radio-opt:hover {
-  background: rgba(79, 70, 229, 0.07);
-  border-color: rgba(79, 70, 229, 0.15);
+  background: var(--primary-light);
+  border-color: rgba(26, 52, 97, 0.2);
 }
 
 .excel-radio-opt input[type="radio"] {
@@ -1444,7 +1420,7 @@ main {
 
 .excel-radio-opt input[type="radio"]:checked~.excel-radio-dot {
   border-color: var(--primary);
-  background: rgba(79, 70, 229, 0.08);
+  background: var(--primary-light);
 }
 
 .excel-radio-opt input[type="radio"]:checked~.excel-radio-dot::after {
@@ -1453,13 +1429,13 @@ main {
 }
 
 .excel-radio-opt:has(input:checked) {
-  background: rgba(79, 70, 229, 0.07);
-  border-color: rgba(79, 70, 229, 0.2);
+  background: var(--primary-light);
+  border-color: rgba(26, 52, 97, 0.25);
 }
 
 .excel-radio-opt:has(input:checked) .excel-radio-label {
   color: var(--primary);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .excel-radio-label {
@@ -1494,8 +1470,7 @@ main {
 
 .excel-chip-opt:hover {
   border-color: var(--primary);
-  background: rgba(79, 70, 229, 0.05);
-  transform: translateY(-2px);
+  background: var(--primary-light);
   box-shadow: var(--shadow-sm);
 }
 
@@ -1506,8 +1481,7 @@ main {
 .excel-chip-opt:has(input:checked) {
   border-color: var(--primary);
   background: var(--primary-light);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
-  transform: translateY(-2px);
+  box-shadow: 0 0 0 2px rgba(26, 52, 97, 0.15);
 }
 
 .excel-chip-icon {
@@ -1524,6 +1498,7 @@ main {
 
 .excel-chip-opt:has(input:checked) .excel-chip-label {
   color: var(--primary);
+  font-weight: 700;
 }
 
 /* Botones del footer del modal */
@@ -1736,9 +1711,9 @@ main {
 }
 
 .theme-toggle:hover {
-  transform: rotate(20deg) scale(1.1);
+  transform: rotate(15deg);
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+  box-shadow: 0 0 0 2px rgba(26, 52, 97, 0.15);
 }
 
 /* ============================================================
@@ -1746,37 +1721,37 @@ main {
    ============================================================ */
 html[data-theme="dark"] {
   color-scheme: dark;
-  --primary: #818cf8;
-  --primary-hover: #a5b4fc;
-  --primary-light: rgba(129, 140, 248, 0.14);
-  --primary-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  --secondary-gradient: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
-  --success-light: rgba(16, 185, 129, 0.16);
-  --warning-light: rgba(245, 158, 11, 0.16);
-  --danger-light: rgba(239, 68, 68, 0.16);
-  --bg: #0e0e10;
-  --surface-solid: #161618;
-  --text-dark: #f4f4f5;
-  --text-body: #d4d4d8;
-  --text-muted: #8b8b94;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.6);
-  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.55);
-  --shadow-md: 0 10px 32px -5px rgba(0, 0, 0, 0.65);
-  --shadow-lg: 0 20px 50px -10px rgba(0, 0, 0, 0.75);
-  --shadow-primary: 0 8px 24px rgba(99, 102, 241, 0.3);
+  --primary: #7ea8d4;       /* Azul acero claro para dark mode */
+  --primary-hover: #93bcdf;
+  --primary-light: rgba(100, 150, 200, 0.12);
+  --primary-gradient: #5b84b1;
+  --secondary-gradient: #4b6080;
+  --success-light: rgba(16, 185, 129, 0.14);
+  --warning-light: rgba(180, 83, 9, 0.14);
+  --danger-light: rgba(185, 28, 28, 0.14);
+  --bg: #0f1117;
+  --surface-solid: #181c24;
+  --text-dark: #e8eaf0;
+  --text-body: #b8bdc9;
+  --text-muted: #7a8090;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 3px 10px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.65);
+  --shadow-primary: 0 6px 18px rgba(94, 130, 170, 0.22);
 }
 
 html[data-theme="dark"] body {
-  background-color: #080809;
-  background-image: radial-gradient(1200px 600px at 50% -10%, rgba(99, 102, 241, 0.07), transparent 60%);
+  background-color: #0d1117;
   background-attachment: fixed;
 }
 
 html[data-theme="dark"] header,
 html[data-theme="dark"] .main-nav {
-  background: rgba(14, 14, 16, 0.92);
+  background: rgba(18, 22, 32, 0.97);
+  border-color: rgba(255, 255, 255, 0.07);
 }
 
 html[data-theme="dark"] .card,
