@@ -281,6 +281,10 @@ const app = {
     if (rb) rb.innerText = badge;
     if (dn) dn.innerText = nombre;
 
+    // Mostrar el header al iniciar sesión
+    const header = document.querySelector('header');
+    if (header) header.style.display = '';
+
     const nav = document.getElementById('mainNav');
     if (nav) nav.style.display = 'block';
 
@@ -310,6 +314,9 @@ const app = {
     document.getElementById('overlay').style.display = 'flex';
     const nav = document.getElementById('mainNav');
     if (nav) nav.style.display = 'none';
+    // Ocultar el header al cerrar sesión para que no quede visible sobre el login (especialmente en móvil)
+    const header = document.querySelector('header');
+    if (header) header.style.display = 'none';
     document.getElementById('loginUsername').value = '';
     document.getElementById('loginPassword').value = '';
   },
