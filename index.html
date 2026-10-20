@@ -26,25 +26,34 @@
        MODAL DE LOGIN
        ===================================================== -->
   <div id="overlay" class="login-page">
-    <!-- LEFT PANEL: Blue Branding -->
-    <div style="flex: 0 0 55%; background: linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%); color: white; display: flex; flex-direction: column; justify-content: center; padding: 5rem; position: relative; overflow: hidden;">
-      <!-- Subtle Background Lines (similar to SaleSkip) -->
-      <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; opacity: 0.1; background-image: repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(255,255,255,1) 40px, rgba(255,255,255,1) 41px); pointer-events: none;"></div>
+    <!-- LEFT PANEL: Blue Branding with Parque de San Gabriel Background -->
+    <div style="flex: 0 0 55%; background: linear-gradient(135deg, rgba(15, 33, 79, 0.85) 0%, rgba(26, 52, 97, 0.68) 50%, rgba(10, 22, 53, 0.88) 100%), url('https://res.cloudinary.com/dtmqftcsr/image/upload/v1790886597/Parque_de_San_Gabriel__Carchi__Ecuador_iygv1y.jpg') center center / cover no-repeat; color: white; display: flex; flex-direction: column; justify-content: space-between; padding: 3.5rem 4rem; position: relative; overflow: hidden; min-height: 100%;">
+      <!-- Ambient light and depth vignette layer -->
+      <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.22) 0%, transparent 60%), linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, transparent 40%, rgba(0,0,0,0.4) 100%); pointer-events: none;"></div>
       
-      <div style="position: relative; z-index: 10; max-width: 600px;">
-        <div style="margin-bottom: 2rem;">
-          <img src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png" alt="Logo" style="max-height: 80px; filter: brightness(0) invert(1);">
+      <!-- TOP: Logo and Location Pill -->
+      <div style="position: relative; z-index: 10; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <img src="https://res.cloudinary.com/dtmqftcsr/image/upload/v1777329849/LOGO_RENOVACIO%CC%81N_MONTUFAREN%CC%83A_fegxxf.png" alt="Logo" style="max-height: 75px; filter: brightness(0) invert(1) drop-shadow(0 4px 14px rgba(0,0,0,0.4));">
+        
+        <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(255, 255, 255, 0.14); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 0.4rem 1rem; border-radius: 9999px; font-size: 0.82rem; font-weight: 600; border: 1px solid rgba(255, 255, 255, 0.25); color: #ffffff; letter-spacing: 0.02em; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+          San Gabriel • Cantón Montúfar
         </div>
-        <h1 style="font-size: 4.5rem; font-weight: 800; line-height: 1.1; margin-bottom: 1.5rem; letter-spacing: -0.02em;">
+      </div>
+
+      <!-- MIDDLE: Welcome & Mission Statement -->
+      <div style="position: relative; z-index: 10; max-width: 580px; margin: 2rem 0;">
+        <h1 style="font-size: clamp(2.8rem, 4.2vw, 4rem); font-weight: 800; line-height: 1.12; margin-bottom: 1.25rem; letter-spacing: -0.02em; text-shadow: 0 3px 18px rgba(0,0,0,0.5);">
           Hola<br>Renovación! 👋
         </h1>
-        <p style="font-size: 1.25rem; line-height: 1.6; opacity: 0.9; margin-bottom: 3rem;">
+        <p style="font-size: clamp(1.05rem, 1.25vw, 1.25rem); line-height: 1.6; opacity: 0.95; text-shadow: 0 2px 10px rgba(0,0,0,0.5); font-weight: 400; max-width: 520px;">
           Brindando atención médica digna y eficiente para nuestra comunidad. Cuidamos de la salud y el bienestar de cada paciente con vocación de servicio.
         </p>
       </div>
       
-      <div class="absolute-footer" style="position: absolute; bottom: 2rem; left: 5rem; font-size: 0.9rem; opacity: 0.7; z-index: 10;">
-        © 2026 Renovación Montufareña. Todos los derechos reservados.
+      <!-- BOTTOM: Footer -->
+      <div class="absolute-footer" style="position: relative; z-index: 10; font-size: 0.85rem; opacity: 0.85; text-shadow: 0 1px 6px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: space-between;">
+        <span>© 2026 Renovación Montufareña. Todos los derechos reservados.</span>
       </div>
     </div>
 

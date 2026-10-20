@@ -79,26 +79,26 @@ const app = {
 
     try {
       if (!window.supabase) throw new Error('SDK no disponible');
-      
+
       // --- MONKEY PATCH FETCH PARA SEDES ---
       const originalFetch = window.fetch;
       window.__originalFetch = originalFetch.bind(window); // Guardar referencia segura
-      window.fetch = async function() {
+      window.fetch = async function () {
         let url = arguments[0];
         let options = arguments[1] || {};
-        
+
         let urlStr = '';
         if (typeof url === 'string') urlStr = url;
         else if (url instanceof URL) urlStr = url.toString();
         else if (url && url.url) urlStr = url.url; // Request object (partial support)
         else urlStr = String(url);
-        
+
         if (urlStr.includes('/rest/v1/pacientes_espera')) {
           const isGlobalSearch = urlStr.includes('skip_patch');
           if (Estado.sede && !isGlobalSearch) {
             // Para SELECT, UPDATE, DELETE (params en la URL)
             if (!options.method || options.method === 'GET' || options.method === 'HEAD') {
-               urlStr += (urlStr.includes('?') ? '&' : '?') + 'sede=eq.' + encodeURIComponent(Estado.sede);
+              urlStr += (urlStr.includes('?') ? '&' : '?') + 'sede=eq.' + encodeURIComponent(Estado.sede);
             }
             // Para INSERT y UPDATE (body en JSON)
             if ((options.method === 'POST' || options.method === 'PATCH') && options.body) {
@@ -110,23 +110,23 @@ const app = {
                   body.sede = Estado.sede;
                 }
                 options.body = JSON.stringify(body);
-              } catch(e) { console.error('Fetch Patch Error', e); }
+              } catch (e) { console.error('Fetch Patch Error', e); }
             }
           }
         }
-        
+
         if (url instanceof URL) {
-            arguments[0] = new URL(urlStr);
+          arguments[0] = new URL(urlStr);
         } else if (typeof url === 'string') {
-            arguments[0] = urlStr;
+          arguments[0] = urlStr;
         } else if (url && url.url && typeof url.clone === 'function') {
-            // If it's a Request object, we would need to clone and reconstruct it, 
-            // but supabase-js typically doesn't pass Request objects directly to the global fetch.
-            // We just override the url property if possible (it's read-only in standard Request, so we might fail here,
-            // but supabase uses fetch(string, options)).
-            arguments[0] = urlStr;
+          // If it's a Request object, we would need to clone and reconstruct it, 
+          // but supabase-js typically doesn't pass Request objects directly to the global fetch.
+          // We just override the url property if possible (it's read-only in standard Request, so we might fail here,
+          // but supabase uses fetch(string, options)).
+          arguments[0] = urlStr;
         } else {
-            arguments[0] = urlStr;
+          arguments[0] = urlStr;
         }
         arguments[1] = options;
         return originalFetch.apply(window, arguments);
@@ -200,7 +200,7 @@ const app = {
         Estado.brigadaDesde = bG || '2000-01-01T00:00:00.000Z';
       }
       console.log('✅ Brigada cargada para', Estado.sede, 'desde:', Estado.brigadaDesde);
-    } catch(e) {
+    } catch (e) {
       console.error('Error obtenerInicioBrigada:', e);
       const bG = localStorage.getItem('brigada_activa_desde_' + Estado.sede);
       Estado.brigadaDesde = bG || '2000-01-01T00:00:00.000Z';
@@ -229,10 +229,10 @@ const app = {
     if (Estado.role === 'admin') {
       this.cerrarOverlay('👑', 'Admin (' + Estado.sede + ')');
       this.mostrarVista('admin');
-      
+
       const select = document.getElementById('adminSedeSelector');
       if (select) select.value = Estado.sede;
-      
+
       this.adminCargarUsuarios();
       this.cargarConfiguracionDP();
       setTimeout(() => this._actualizarInfoBrigada(), 100);
@@ -684,7 +684,7 @@ const app = {
           if (Array.isArray(rSede) && rSede.length > 0 && rSede[0].sede) {
             loginData.sede = rSede[0].sede;
           }
-        } catch(e) { console.warn('No se pudo obtener sede del usuario:', e); }
+        } catch (e) { console.warn('No se pudo obtener sede del usuario:', e); }
       }
 
       // ── Login exitoso ─────────────────────────────────────────────
@@ -705,7 +705,7 @@ const app = {
           let nombreSedeReal = dbSede;
           if (dbSede === 'Sede A' && Estado.nombreSedeA) nombreSedeReal = Estado.nombreSedeA;
           if (dbSede === 'Sede B' && Estado.nombreSedeB) nombreSedeReal = Estado.nombreSedeB;
-          
+
           let nombreSedeIntento = sedeSeleccionada;
           if (sedeSeleccionada === 'Sede A' && Estado.nombreSedeA) nombreSedeIntento = Estado.nombreSedeA;
           if (sedeSeleccionada === 'Sede B' && Estado.nombreSedeB) nombreSedeIntento = Estado.nombreSedeB;
@@ -734,7 +734,7 @@ const app = {
     } catch (e) {
       console.error('Login error final:', e.message);
       this.toast(e.message, 'error');
-      
+
       // Si la animación está activa, la ocultamos y volvemos a mostrar el formulario
       const loader = document.getElementById('medical-loader');
       const stepLogin = document.getElementById('step-login');
@@ -1145,7 +1145,7 @@ const app = {
       const { data: currentCita } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', citaId).single();
       let sv = {};
       if (currentCita && currentCita.signos_vitales) {
-        try { sv = JSON.parse(currentCita.signos_vitales); } catch(e){}
+        try { sv = JSON.parse(currentCita.signos_vitales); } catch (e) { }
       }
       sv.cancelado_por = Estado.userName;
       sv.motivo_cancelacion = "Cita cancelada desde agenda";
@@ -1286,7 +1286,7 @@ const app = {
 
       let sv = {};
       try { sv = JSON.parse(data.signos_vitales || '{}'); } catch (e) { }
-      sv.llamados = (sv.llamados || 1) + 1; 
+      sv.llamados = (sv.llamados || 1) + 1;
 
       const { error } = await sb.from('pacientes_espera')
         .update({ signos_vitales: JSON.stringify(sv) })
@@ -1614,7 +1614,7 @@ const app = {
         const { data: currentP } = await sb.from('pacientes_espera').select('signos_vitales').eq('id', pacienteId).single();
         let sv = {};
         if (currentP && currentP.signos_vitales) {
-          try { sv = JSON.parse(currentP.signos_vitales); } catch(e){}
+          try { sv = JSON.parse(currentP.signos_vitales); } catch (e) { }
         }
         sv.cancelado_por = Estado.userName;
         sv.motivo_cancelacion = "Paciente dado de baja / Ausente";
@@ -2271,9 +2271,9 @@ const app = {
 
       while (hasMore) {
         const { data, error } = await queryBase.range(fromRow, fromRow + step - 1);
-        
+
         if (error) throw error;
-        
+
         if (data && data.length > 0) {
           allData = allData.concat(data);
           fromRow += step;
@@ -2452,11 +2452,11 @@ const app = {
       };
       const estadoBadge = `<span style="padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; ${estadoClases[reg.estado] || 'background: #cbd5e1; color: #334155;'}">${(reg.estado || '').toUpperCase()}</span>`;
 
-      const turnoInfo = reg.numero_turno_area 
-        ? ` - Turno: ${(reg.especialidad || '').substring(0, 3).toUpperCase()}-${reg.numero_turno_area}` 
+      const turnoInfo = reg.numero_turno_area
+        ? ` - Turno: ${(reg.especialidad || '').substring(0, 3).toUpperCase()}-${reg.numero_turno_area}`
         : '';
 
-      const reactivarBtn = (reg.estado === 'cancelado' && Estado.role === 'turnero') 
+      const reactivarBtn = (reg.estado === 'cancelado' && Estado.role === 'turnero')
         ? `<button class="btn-action" style="background: var(--primary); padding: 0.2rem 0.6rem; font-size: 0.75rem; margin-left: 0.5rem;" onclick="app.reactivarTurnoAusente('${reg.id}')">🔄 Dar Nuevo Turno</button>`
         : '';
 
@@ -2561,7 +2561,7 @@ const app = {
     if (!Estado.online || !sb) return;
 
     try {
-      const { data: paciente } = await sb.from('pacientes_espera').select('*').eq('cedula', cedulaOriginal).order('created_at', {ascending: false}).limit(1).single();
+      const { data: paciente } = await sb.from('pacientes_espera').select('*').eq('cedula', cedulaOriginal).order('created_at', { ascending: false }).limit(1).single();
       if (!paciente) throw new Error('No se encontraron datos');
 
       const modal = document.createElement('div');
@@ -2630,10 +2630,10 @@ const app = {
       }).eq('cedula', cedulaOriginal);
 
       if (error) throw error;
-      
+
       this.toast('✅ Datos del paciente actualizados en todo su historial', 'success');
       document.getElementById('modalActualizarDatos').remove();
-      
+
       // Actualizar la búsqueda para reflejar los cambios
       document.getElementById('inputBuscarHistoria').value = cedula;
       this.buscarHistoriaClinica();
@@ -2674,7 +2674,7 @@ const app = {
       let tieneSVDeHoy = false;
       if (pData && pData.signos_vitales) {
         let sv = {};
-        try { sv = JSON.parse(pData.signos_vitales); } catch(e) {}
+        try { sv = JSON.parse(pData.signos_vitales); } catch (e) { }
         // Consideramos que tiene signos vitales válidos si tiene al menos presión, temperatura o saturación
         const tieneSV = sv.presion || sv.temperatura || sv.saturacion || sv.frecuencia;
         if (tieneSV && pData.created_at) {
@@ -2766,7 +2766,7 @@ const app = {
 
       listEl.innerHTML = '';
       const usuarios = data.data || [];
-      
+
       // Intentar recuperar la sede de todos los usuarios (ya que el RPC antiguo no la devuelve)
       try {
         const resp = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?select=username,sede`, {
@@ -2779,8 +2779,8 @@ const app = {
             if (match && match.sede) u.sede = match.sede;
           });
         }
-      } catch(e) { console.warn('No se pudieron obtener las sedes', e); }
-      
+      } catch (e) { console.warn('No se pudieron obtener las sedes', e); }
+
       // Mostrar TODOS los usuarios, indicando la sede a la que pertenece cada uno
       usuarios.forEach(u => { if (u.role !== 'admin' && !u.sede) u.sede = 'Sede A'; });
       const nombreSede = s => s === 'Sede A' ? (Estado.nombreSedeA || 'Sede A') : (s === 'Sede B' ? (Estado.nombreSedeB || 'Sede B') : s);
@@ -2830,20 +2830,20 @@ const app = {
       parsed.sede = nuevaSede;
       localStorage.setItem('turnero_session', JSON.stringify(parsed));
     }
-    
+
     // Obtener el inicio de brigada de esta nueva sede
     await this.obtenerInicioBrigada();
     this._actualizarInfoBrigada();
-    
+
     // Si la vista actual es Dashboard, refrescarla
     const vistaDash = document.getElementById('view-dashboard');
     if (vistaDash && vistaDash.classList.contains('active')) {
       this.generarDashboard();
     }
-    
+
     // Refrescar la lista de usuarios para mostrar solo los de la sede actual
     this.adminCargarUsuarios();
-    
+
     this.toast('Sede cambiada a: ' + nuevaSede, 'info');
   },
 
@@ -3045,7 +3045,7 @@ const app = {
   _actualizarInfoBrigada() {
     const el = document.getElementById('brigadaInfoLabel');
     if (!el || !Estado.brigadaDesde) return;
-    
+
     // Si la fecha es la por defecto (año 2000 en UTC), la ocultamos de la interfaz
     if (Estado.brigadaDesde.startsWith('2000-01-01')) {
       el.style.display = 'none';
@@ -3166,7 +3166,7 @@ const app = {
     this.activarTab('EstadoTurnos');
     this.mostrarVista('estadoTurnos');
     this.cargarEstadoTurnos();
-    
+
     if (Estado.estadoTurnosInterval) clearInterval(Estado.estadoTurnosInterval);
     Estado.estadoTurnosInterval = setInterval(() => {
       const vista = document.getElementById('view-estadoTurnos');
@@ -3182,7 +3182,7 @@ const app = {
     const grid = document.getElementById('gridEstadoTurnos');
     if (!grid) return;
     if (!silent) grid.innerHTML = '<div style="color:var(--text-muted); text-align:center; width:100%;">Cargando estado...</div>';
-    
+
     if (!Estado.online || !sb) return;
 
     try {
@@ -3191,9 +3191,9 @@ const app = {
         .eq('sede', Estado.sede)
         .gte('created_at', Estado.brigadaDesde)
         .order('numero_turno_area', { ascending: false });
-        
+
       if (error) throw error;
-      
+
       const areas = {};
       const signosVitalesActivos = []; // pacientes actualmente en en_triaje
       const candidatosUltimoTriaje = []; // todos los que ya pasaron por signos
@@ -3247,7 +3247,7 @@ const app = {
           try {
             const svObj = JSON.parse(p.signos_vitales || '{}');
             triaje_at = svObj.triaje_at || '';
-          } catch(e) {}
+          } catch (e) { }
           candidatosUltimoTriaje.push({
             turno: p.numero_turno_area
               ? `${(p.especialidad || '').substring(0, 3).toUpperCase()}-${p.numero_turno_area}`
@@ -3375,7 +3375,7 @@ const app = {
 
     try {
       const fetchFn = window.__originalFetch || window.fetch;
-      
+
       // Intentar buscar por cédula
       let resp = await fetchFn(
         SUPABASE_URL + '/rest/v1/pacientes_espera?select=*&cedula=eq.' + encodeURIComponent(query) + '&order=created_at.desc',
@@ -3486,7 +3486,7 @@ const app = {
                       ${(v.estado === 'cancelado' && Estado.role === 'turnero') ? `<button class="btn-action" style="background: var(--primary); padding: 0.2rem 0.6rem; font-size: 0.75rem; margin-left: 0.5rem;" onclick="app.reactivarTurnoAusente('${v.id}')">🔄 Dar Nuevo Turno</button>` : ''}
                     </div>
                     <div style="font-weight: 700; color: var(--text-dark);">
-                      ${v.especialidad || 'N/A'} ${v.numero_turno_area ? `— Turno: ${(v.especialidad || '').substring(0,3).toUpperCase()}-${v.numero_turno_area}` : ''}
+                      ${v.especialidad || 'N/A'} ${v.numero_turno_area ? `— Turno: ${(v.especialidad || '').substring(0, 3).toUpperCase()}-${v.numero_turno_area}` : ''}
                       <span style="font-weight: 400; color: var(--text-muted);">— Atendido por: ${v.atendido_por || v.creado_por || 'N/A'}</span>
                     </div>
                     ${v.estado === 'cancelado' ? `<div style="margin-top: 0.5rem; font-size: 0.88rem; background: rgba(239, 68, 68, 0.05); padding: 0.6rem 1rem; border-radius: 8px; border-left: 3px solid var(--danger); color: var(--danger);"><strong>Dado de baja por:</strong> ${svV.cancelado_por || 'N/A'} - ${svV.motivo_cancelacion || 'Dado de baja'}</div>` : ''}
@@ -3510,7 +3510,7 @@ const app = {
   cargarFirma(input, tipo) {
     if (input.files && input.files[0]) {
       const reader = new FileReader();
-      reader.onload = function(e) {
+      reader.onload = function (e) {
         const preview = document.getElementById(`dp${tipo}FirmaPreview`);
         const btnRemove = document.getElementById(`dp${tipo}FirmaRemove`);
         preview.src = e.target.result;
@@ -3552,7 +3552,7 @@ const app = {
       tecnico_correo: document.getElementById('dpTecnicoCorreo').value,
       tecnico_firma: document.getElementById('dpTecnicoFirmaPreview').src || ''
     };
-    
+
     try {
       // Obtener versión actual de la base de datos
       const { data: currentData } = await sb.from('configuracion_clinica').select('*').limit(1);
@@ -3564,7 +3564,7 @@ const app = {
         isUpdate = true;
         idToUpdate = currentData[0].id;
         currentVersion = currentData[0].version || '1.0';
-        
+
         // Si hay algún cambio en los datos, incrementamos versión
         const oldConfig = currentData[0];
         let hasChanges = false;
@@ -3606,10 +3606,10 @@ const app = {
 
       if (data && data.length > 0) {
         const config = data[0];
-        
+
         Estado.nombreSedeA = config.nombre_sede_a || 'Sede A';
         Estado.nombreSedeB = config.nombre_sede_b || 'Sede B';
-        
+
         if (document.getElementById('dpNombreSedeA')) document.getElementById('dpNombreSedeA').value = Estado.nombreSedeA;
         if (document.getElementById('dpNombreSedeB')) document.getElementById('dpNombreSedeB').value = Estado.nombreSedeB;
 
@@ -3620,20 +3620,20 @@ const app = {
         document.getElementById('dpTelefono').value = config.telefono || '';
         document.getElementById('dpDireccion').value = config.direccion || '';
         document.getElementById('dpCorreo').value = config.correo || '';
-        
+
         document.getElementById('dpJuridicoNombre').value = config.juridico_nombre || '';
         document.getElementById('dpJuridicoId').value = config.juridico_id || '';
         document.getElementById('dpJuridicoCorreo').value = config.juridico_correo || '';
-        
+
         if (config.juridico_firma && config.juridico_firma.startsWith('data:image')) {
           document.getElementById('dpJuridicoFirmaPreview').src = config.juridico_firma;
           document.getElementById('dpJuridicoFirmaPreview').style.display = 'block';
           document.getElementById('dpJuridicoFirmaRemove').style.display = 'inline-block';
         }
-        
+
         document.getElementById('dpTecnicoNombre').value = config.tecnico_nombre || '';
         document.getElementById('dpTecnicoCorreo').value = config.tecnico_correo || '';
-        
+
         if (config.tecnico_firma && config.tecnico_firma.startsWith('data:image')) {
           document.getElementById('dpTecnicoFirmaPreview').src = config.tecnico_firma;
           document.getElementById('dpTecnicoFirmaPreview').style.display = 'block';
@@ -3641,13 +3641,13 @@ const app = {
         }
 
         if (config.version) {
-           localStorage.setItem('dp_version', config.version);
+          localStorage.setItem('dp_version', config.version);
         }
       }
     } catch (e) {
       console.error('Error cargando configuración:', e);
     }
-    
+
     this.actualizarHistorialDP();
   },
 
@@ -3688,7 +3688,7 @@ const app = {
         list.innerHTML = '<li><div class="state-empty"><span class="state-empty-icon">📂</span><span class="state-empty-text">No hay documentos generados aún en la base de datos.</span></div></li>';
         return;
       }
-      
+
       list.innerHTML = data.map(h => `
         <li style="display:flex; justify-content:space-between; padding: 1rem; border-bottom: 1px solid var(--border);">
           <div>
@@ -3709,7 +3709,7 @@ const app = {
       this.toast('Conexión requerida para generar PDF', 'error');
       return;
     }
-    
+
     let config = null;
     let version = '1.0';
 
@@ -3728,9 +3728,9 @@ const app = {
 
     const fecha = new Date().toLocaleDateString('es-EC');
     const hora = new Date().toLocaleTimeString('es-EC');
-    
+
     const modalPrivacidadContent = document.querySelector('#modal-privacidad div[style*="flex-direction: column"]');
-    
+
     let textoPolitica = '';
     if (modalPrivacidadContent) {
       textoPolitica = modalPrivacidadContent.innerHTML;
@@ -3740,13 +3740,13 @@ const app = {
 
     try {
       this.toast('Abriendo documento para imprimir/guardar como PDF...', 'success');
-      
+
       const printWindow = window.open('', '_blank');
       if (!printWindow) {
         this.toast('Por favor permite las ventanas emergentes (pop-ups) para generar el PDF', 'error');
         return;
       }
-      
+
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
@@ -3837,7 +3837,7 @@ const app = {
         </html>
       `);
       printWindow.document.close();
-      
+
       // Esperar a que las imágenes carguen antes de imprimir
       setTimeout(() => {
         printWindow.focus();
@@ -3849,10 +3849,10 @@ const app = {
         version: version,
         usuario: Estado.userName
       }]);
-      
+
       if (error) console.error('Error insertando en historial', error);
       this.actualizarHistorialDP();
-      
+
     } catch (error) {
       console.error(error);
       this.toast('Error al generar PDF', 'error');
