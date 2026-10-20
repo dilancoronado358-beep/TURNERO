@@ -17,7 +17,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
   <!-- Estilos -->
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 
 <body>
@@ -1221,9 +1221,34 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js').then(registration => {
-          console.log('SW registrado: ', registration);
-        }).catch(registrationError => {
-          console.log('Error en registro de SW: ', registrationError);
+          console.log('[SW] Registrado correctamente:', registration.scope);
+
+          // Detectar cuando hay un nuevo Service Worker esperando
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            if (!newWorker) return;
+
+            newWorker.addEventListener('statechange', () => {
+              // Cuando el nuevo SW está instalado y listo
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.log('[SW] Nueva versión disponible — recargando...');
+                // Enviar mensaje al nuevo SW para que tome control inmediatamente
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+
+          // Cuando el SW toma el control, recargar la página para cargar archivos frescos
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            console.log('[SW] Nuevo controlador activo — recargando página');
+            window.location.reload();
+          });
+
+          // Verificar actualización cada vez que se abre la app (útil para celulares)
+          registration.update().catch(() => {});
+
+        }).catch(err => {
+          console.warn('[SW] Error en registro:', err);
         });
       });
     }
